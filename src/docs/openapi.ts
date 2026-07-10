@@ -1,25 +1,26 @@
 import { OpenAPIRegistry, OpenApiGeneratorV3 } from '@asteasolutions/zod-to-openapi'
 import { z } from '../config/zod'
-import { createUserSchema, userIdParamSchema } from '../validators/user.validators'
+import { registerSchema, loginSchema, createOrganizerSchema } from '../validators/auth.validators'
 
-// Reusing the validator schemas here means the docs can never drift from
-// what the API actually accepts — single source of truth. `z` comes from
-// config/zod, which has already been extended with `.openapi()`.
 const registry = new OpenAPIRegistry()
 
 // ── Reusable component schemas ────────────────────────────────────────────
-const UserSchema = registry.register(
-  'User',
+const PublicUserSchema = registry.register(
+  'PublicUser',
   z.object({
-    _id: z.string().openapi({ example: '665f1b2c9d1e4a0012a3b4c5' }),
-    name: z.string().openapi({ example: 'Ada Lovelace' }),
-    email: z.email().openapi({ example: 'ada@example.com' }),
-    createdAt: z.string().openapi({ example: '2026-07-05T12:00:00.000Z' }),
-    updatedAt: z.string().openapi({ example: '2026-07-05T12:00:00.000Z' }),
+    id: z.string().openapi({ example: '665f1b2c9d1e4a0012a3b4c5' }),
+    phone: z.string().openapi({ example: '+998901234567' }),
+    name: z.string().openapi({ example: 'Ali' }),
+    surname: z.string().openapi({ example: 'Valiyev' }),
+    role: z.enum(['participant', 'organizer', 'organization']).openapi({ example: 'participant' }),
   }),
 )
 
-const CreateUserSchema = registry.register('CreateUserInput', createUserSchema)
+const SessionResponse = z.object({ user: PublicUserSchema })
+
+const RegisterInput = registry.register('RegisterInput', registerSchema)
+const LoginInput = registry.register('LoginInput', loginSchema)
+const CreateOrganizerInput = registry.register('CreateOrganizerInput', createOrganizerSchema)
 
 // ── Paths ─────────────────────────────────────────────────────────────────
 registry.registerPath({
@@ -31,59 +32,89 @@ registry.registerPath({
     200: {
       description: 'Service is up',
       content: {
-        'application/json': {
-          schema: z.object({ status: z.string(), uptime: z.number() }),
-        },
+        'application/json': { schema: z.object({ status: z.string(), uptime: z.number() }) },
       },
     },
   },
 })
 
 registry.registerPath({
-  method: 'get',
-  path: '/api/users',
-  tags: ['Users'],
-  summary: 'List users',
+  method: 'post',
+  path: '/api/auth/register',
+  tags: ['Auth'],
+  summary: 'Register a participant (role is always participant)',
+  request: { body: { content: { 'application/json': { schema: RegisterInput } } } },
   responses: {
-    200: {
-      description: 'Array of users',
-      content: { 'application/json': { schema: z.array(UserSchema) } },
+    201: {
+      description: 'Session started; sets the camply_sid cookie',
+      content: { 'application/json': { schema: SessionResponse } },
     },
-  },
-})
-
-registry.registerPath({
-  method: 'get',
-  path: '/api/users/{id}',
-  tags: ['Users'],
-  summary: 'Get a user by id',
-  request: { params: userIdParamSchema },
-  responses: {
-    200: {
-      description: 'The user',
-      content: { 'application/json': { schema: UserSchema } },
-    },
-    404: { description: 'User not found' },
+    409: { description: 'Phone already registered' },
   },
 })
 
 registry.registerPath({
   method: 'post',
-  path: '/api/users',
-  tags: ['Users'],
-  summary: 'Create a user',
-  request: {
-    body: {
-      content: { 'application/json': { schema: CreateUserSchema } },
+  path: '/api/auth/login',
+  tags: ['Auth'],
+  summary: 'Log in (participant: phone only; org/organizer: phone + password)',
+  request: { body: { content: { 'application/json': { schema: LoginInput } } } },
+  responses: {
+    200: {
+      description: 'Session started; sets the camply_sid cookie',
+      content: { 'application/json': { schema: SessionResponse } },
     },
+    401: { description: 'Invalid credentials' },
   },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/auth/me',
+  tags: ['Auth'],
+  summary: 'The authenticated user',
+  responses: {
+    200: {
+      description: 'Current user',
+      content: { 'application/json': { schema: PublicUserSchema } },
+    },
+    401: { description: 'Not authenticated' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/auth/logout',
+  tags: ['Auth'],
+  summary: 'Log out this session',
+  responses: { 204: { description: 'Logged out' }, 401: { description: 'Not authenticated' } },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/auth/logout-all',
+  tags: ['Auth'],
+  summary: 'Log out every session for this user',
+  responses: {
+    204: { description: 'Logged out everywhere' },
+    401: { description: 'Not authenticated' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/organizers',
+  tags: ['Auth'],
+  summary: 'Create an organizer (organization only)',
+  request: { body: { content: { 'application/json': { schema: CreateOrganizerInput } } } },
   responses: {
     201: {
-      description: 'Created user',
-      content: { 'application/json': { schema: UserSchema } },
+      description: 'Organizer created',
+      content: { 'application/json': { schema: SessionResponse } },
     },
-    400: { description: 'Validation failed' },
-    409: { description: 'Email already in use' },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+    409: { description: 'Phone already registered' },
   },
 })
 

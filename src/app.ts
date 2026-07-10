@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import cookieParser from 'cookie-parser'
 import swaggerUi from 'swagger-ui-express'
 import { env } from './config/env'
 import routes from './routes'
@@ -11,6 +12,7 @@ export function createApp() {
 
   app.use(cors({ origin: env.CLIENT_ORIGIN, credentials: true }))
   app.use(express.json())
+  app.use(cookieParser())
 
   // Interactive API docs at /api/docs (spec at /api/docs.json)
   const openApiDocument = buildOpenApiDocument()
