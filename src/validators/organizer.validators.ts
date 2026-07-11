@@ -1,13 +1,9 @@
 import { z } from '../config/zod'
 
-// 9 national digits — matches the frontend's PHONE_LENGTH.
-const phone = z.string().regex(/^\d{9}$/, 'Phone must be 9 digits')
-
 export const createOrganizerSchema = z.object({
-  phone,
   name: z.string().min(1).max(60),
   surname: z.string().min(1).max(60),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  email: z.string().email('A valid email is required'),
 })
 
 export const updateOrganizerSchema = z.object({

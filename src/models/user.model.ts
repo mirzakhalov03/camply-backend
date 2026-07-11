@@ -12,6 +12,9 @@ const userSchema = new Schema(
     // The organization super-admin logs in by username, not phone. Sparse-unique:
     // only org accounts have one. Lowercased so 'Admin' and 'admin' can't collide.
     username: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
+    // Organizers are invited by email (magic-link onboarding); sparse-unique so the
+    // many phone-only users don't collide. Set at invite time; phone arrives on accept.
+    email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
     name: { type: String, required: true, trim: true },
     surname: { type: String, required: true, trim: true },
     role: { type: String, enum: USER_ROLES, default: 'participant', required: true },

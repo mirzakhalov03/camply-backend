@@ -7,8 +7,18 @@ export const listOrganizers: RequestHandler = async (_req, res) => {
 }
 
 export const createOrganizer: RequestHandler = async (req, res) => {
-  const organizer = await organizerService.create(req.body)
-  res.status(201).json({ organizer })
+  const result = await organizerService.create(req.body)
+  res.status(201).json(result) // { organizer, inviteUrl? }
+}
+
+export const resendInvite: RequestHandler = async (req, res) => {
+  const result = await organizerService.resendInvite(String(req.params.id))
+  res.json(result)
+}
+
+export const revokeInvite: RequestHandler = async (req, res) => {
+  await organizerService.revokeInvite(String(req.params.id))
+  res.status(204).end()
 }
 
 export const updateOrganizer: RequestHandler = async (req, res) => {
