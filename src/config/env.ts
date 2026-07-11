@@ -13,8 +13,9 @@ const envSchema = z.object({
   // How stale a session may get before an authenticated request slides it forward.
   SESSION_REFRESH_THRESHOLD_HOURS: z.coerce.number().default(24),
   // Used ONLY by `npm run seed:org` to provision the first organization.
-  SEED_ORG_PHONE: z.string().optional(),
-  SEED_ORG_PASSWORD: z.string().optional(),
+  // The org logs in by username (not phone); dev defaults are admin / 1234.
+  SEED_ORG_USERNAME: z.string().min(1).default('admin'),
+  SEED_ORG_PASSWORD: z.string().min(1).default('1234'),
 })
 
 const parsed = envSchema.safeParse(process.env)

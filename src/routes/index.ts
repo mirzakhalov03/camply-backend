@@ -1,9 +1,6 @@
 import { Router } from 'express'
 import authRoutes from './auth.routes'
-import { requireAuth, requireRole } from '../middlewares/auth.middleware'
-import { validate } from '../middlewares/validate.middleware'
-import { createOrganizerSchema } from '../validators/auth.validators'
-import { createOrganizer } from '../controllers/auth.controllers'
+import organizerRoutes from './organizer.routes'
 
 const router = Router()
 
@@ -12,14 +9,6 @@ router.get('/health', (_req, res) => {
 })
 
 router.use('/auth', authRoutes)
-
-// Organization-only: create an organizer. Authorization enforced server-side.
-router.post(
-  '/organizers',
-  requireAuth,
-  requireRole('organization'),
-  validate({ body: createOrganizerSchema }),
-  createOrganizer,
-)
+router.use('/organizers', organizerRoutes)
 
 export default router

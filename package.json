@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "nodemon",
     "seed:org": "tsx src/scripts/seedOrg.ts",
+    "seed:participants": "tsx src/scripts/seedParticipants.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "oxlint src",

@@ -13,7 +13,8 @@ touching auth or permissions.** This file covers the backend stack and conventio
 - `npm run lint` — **oxlint** (not ESLint). `npm run format` / `format:check` — Prettier.
 - `npm run validate` — lint + format:check + typecheck (the pre-commit hook).
 - `npm run seed:org` — dev-only: provisions the first `organization` from
-  `SEED_ORG_PHONE` / `SEED_ORG_PASSWORD`.
+  `SEED_ORG_USERNAME` / `SEED_ORG_PASSWORD` (dev defaults `admin` / `1234`). The
+  org is keyed by **username** and has no phone.
 
 No test runner is configured (project preference) — verify manually with curl or
 `/api/docs`.
@@ -51,6 +52,18 @@ Express 5 · Mongoose 9 (MongoDB) · Zod 4 · TypeScript (strict, CommonJS).
   the client-sent `role` is ignored. Organizations exist only via `npm run seed:org`;
   organizers only via the org-only `POST /organizers`. A hidden button is never a
   permission — the server is the sole authority.
+- **Login identity:** participants/organizers log in by **phone**; the organization
+  logs in by **username** (`User.username`, sparse-unique, lowercased — the org has
+  no phone, which is now optional on the model). `loginSchema` is a union of the two
+  shapes; `authService.login` branches on which is present.
+- **`active` flag + deactivation:** every user has `User.active` (default true).
+  Both `authService.login` and `requireAuth` reject `active === false` (401), so a
+  deactivated organizer can't sign in **or** ride an existing session. Deactivating
+  also calls `sessionService.revokeAllForUser` to kill live sessions immediately.
+- **`organizers` domain** (`routes/services/controllers/validators/organizer.*`),
+  org-only, extracted out of `auth.*`: `GET /organizers` (list), `POST /organizers`
+  (create), `PATCH /organizers/:id` (`{ active }` — deactivate/reactivate). The old
+  `authService.createOrganizer` moved here.
 - **Participants authenticate by phone alone** (no secret yet). The `/login` and
   `/register` handlers are shaped so an OTP verification step drops in later
   without changing `/me`, sessions, or authorization. Org/organizer accounts use a

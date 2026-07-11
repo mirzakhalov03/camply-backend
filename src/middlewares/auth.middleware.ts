@@ -20,6 +20,8 @@ export const requireAuth: RequestHandler = async (req, _res, next) => {
 
   const user = await UserModel.findById(session.userId)
   if (!user) throw new HttpError(401, 'Not authenticated')
+  // A just-deactivated organizer must not ride an existing session.
+  if (!user.active) throw new HttpError(401, 'Account deactivated')
 
   await sessionService.refreshIfStale(session)
   req.auth = { user, session }
