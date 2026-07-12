@@ -34,7 +34,7 @@ export const inviteService = {
     if (invite.expiresAt.getTime() <= Date.now()) throw new HttpError(410, 'Invite expired')
     const user = await UserModel.findById(invite.userId)
     if (!user) throw new HttpError(404, 'Invalid invite')
-    return { name: user.name, email: invite.email }
+    return { name: user.name ?? '', email: invite.email }
   },
 
   /** Bind the phone, activate, delete the token, and start a session (log them in). */

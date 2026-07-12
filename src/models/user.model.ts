@@ -1,4 +1,5 @@
 import { Schema, model, type InferSchemaType } from 'mongoose'
+import { ORGANIZER_SUB_ROLES } from './membership.model'
 
 // The role hierarchy (Context.md §3). Exported so validators, sessions, and the
 // authorization middleware share one source of truth.
@@ -15,8 +16,8 @@ const userSchema = new Schema(
     // Organizers are invited by email (magic-link onboarding); sparse-unique so the
     // many phone-only users don't collide. Set at invite time; phone arrives on accept.
     email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
-    name: { type: String, required: true, trim: true },
-    surname: { type: String, required: true, trim: true },
+    name: { type: String, trim: true },
+    surname: { type: String, trim: true },
     role: { type: String, enum: USER_ROLES, default: 'participant', required: true },
     // Deactivating an organizer sets this false; login + requireAuth reject it.
     active: { type: Boolean, default: true, required: true },
@@ -24,6 +25,8 @@ const userSchema = new Schema(
     cityId: { type: String, trim: true },
     age: { type: Number },
     photo: { type: String, default: null },
+    // Organizer's identity sub-role (coordinator, medic, …). Stored, not yet enforced.
+    subRole: { type: String, enum: ORGANIZER_SUB_ROLES },
     // Only org/organizer accounts have a password; participants sign in by phone.
     // select:false keeps it out of every query unless explicitly requested.
     passwordHash: { type: String, select: false },

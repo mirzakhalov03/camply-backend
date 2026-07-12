@@ -63,11 +63,11 @@ Express 5 · Mongoose 9 (MongoDB) · Zod 4 · TypeScript (strict, CommonJS).
 - **`organizers` domain** (`routes/services/controllers/validators/organizer.*`),
   org-only, extracted out of `auth.*`. Organizers are now onboarded by **emailed
   magic link**, not created fully-formed: `POST /organizers` takes `{name, surname,
-  email}`, creates a **pending** organizer (no phone, no password), issues an
+email}`, creates a **pending** organizer (no phone, no password), issues an
   `Invite` token, and emails a link (returns `inviteUrl` in dev). `POST
-  /organizers/:id/resend` re-issues the token; `DELETE /organizers/:id` revokes a
+/organizers/:id/resend` re-issues the token; `DELETE /organizers/:id` revokes a
   pending invite (deletes the stub user). `PATCH /organizers/:id` (`{ active }`)
-  deactivates/reactivates an *accepted* organizer. Status is **derived** in
+  deactivates/reactivates an _accepted_ organizer. Status is **derived** in
   `toPublicOrganizer` (`phone == null` → `pending`, else `active`/`deactivated`), not
   stored. The old password-based `create` is gone (organizers log in by phone).
 - **Invite onboarding** (`models/invite.model.ts`, `services/invite.services.ts`,
@@ -81,13 +81,70 @@ Express 5 · Mongoose 9 (MongoDB) · Zod 4 · TypeScript (strict, CommonJS).
   sparse-unique `email` field.
 - **Participants authenticate by phone alone** (no secret yet). The `/login` and
   `/register` handlers are shaped so an OTP verification step drops in later
-  without changing `/me`, sessions, or authorization. Org/organizer accounts use a
+  without changing `/me`, sessions, or authorization.
+- **Claim-on-login + profile contract** (organizer onboarding chain). In the phone
+  branch, `authService.login` now **claims a pre-provisioned participant**: an
+  unknown phone that has a **pending participant `Membership`** (`userId: null`)
+  provisions a nameless participant `User` (then `bindPhone` + session) instead of
+  401-ing; an unknown phone with **no** pending membership still 401s (the allowlist
+  guardrail holds). `User.name`/`surname` are now **optional** (a claimed participant
+  is nameless until they finish). `completeProfile` (`PATCH /auth/me`) grew
+  `name`/`surname` (required) + optional organizer **`subRole`** (one of
+  `ORGANIZER_SUB_ROLES`, applied only when `role === 'organizer'` — stored, not
+  enforced); `profileComplete` now also requires `name`. Both participant
+  (self-named) and organizer (onboarding) use this one endpoint. Design/plan:
+  `docs/superpowers/{specs,plans}/2026-07-12-organizer-onboarding-chain*.md`. Org/organizer accounts use a
   `bcryptjs` password (`passwordHash`, `select:false`, never returned).
 - **Sessions:** sliding expiry (`sessionService.refreshIfStale`), instant
   revocation (`/logout`), and "log out everywhere" (`/logout-all`).
 
 Design + plan: `docs/superpowers/specs/2026-07-11-auth-authorization-design.md`,
 `docs/superpowers/plans/2026-07-11-auth-authorization.md`.
+
+## Organizer CRUD domains (camp, group, roster, schedule, announcement, leaderboard, team)
+
+The organizer view's data layer. Seven domains behind the standard
+`routes → controllers → services → models` layering, each shipping a `toPublic*`
+projection that reproduces the frontend contract exactly (the frontend services flip
+mock → live with no UI change).
+
+- **Models** (`models/`): `camp`, `group`, `membership`, `activity`, `announcement`,
+  `leaderboard` (`GroupPoints` + append-only `PointEvent`). `Camp.status` stores only
+  `draft`/`published` — the public `upcoming`/`active`/`archived` is **derived from
+  dates** in `toOrganizerCamp`, never stored.
+- **Membership is the join foundation.** Keyed by `{campId, phone}` (unique). The
+  organizer pre-provisions a participant by **phone** (`status: 'pending'`, no
+  `userId`); on **login** `membershipService.bindPhone` attaches the row to the user
+  and flips it `active` (additive + idempotent — the one touch-point in `auth.services`;
+  `/login`/`/me` shapes unchanged). The 7 **organizer sub-roles**
+  (`ORGANIZER_SUB_ROLES` on the membership model) all grant camp-management; granular
+  per-sub-role enforcement is post-launch (captured, not gated). ≤2 participant camps
+  per phone is enforced at roster add. **`rosterService.add` canonicalizes the phone**
+  (`+998…`, same as login) before storing/counting — otherwise the pending membership
+  would never match the canonical phone `authService.login`/`bindPhone` query with, and
+  the claim-on-login chain would silently 401. A repeat add for the same `{campId,
+phone}` maps the Mongo `E11000` to a clean **409**, not a 500.
+- **Camp-scoping middleware** (`middlewares/campScope.middleware.ts`), composed
+  **after** `requireAuth`: `requireCampMember` (resolves `:id` → `req.camp` +
+  `req.membership`; org super-admin sees any camp in its org; **reads** use this) and
+  `requireCampManager` (organizer-tier membership / org / camp creator; **writes** use
+  this). Sub-routers under `/camps/:id/...` and `/organizer/camps/:id/...` **must** use
+  `Router({ mergeParams: true })` or the middleware can't read `:id`. `req.camp` /
+  `req.membership` are augmented in `types/express.d.ts`.
+- **Routes:** `/organizer/camps` + `/organizer/summary` (organizer management,
+  organizer-only) and `/camps/:id/...` (shared read — participants included). Roster
+  and groups mount under the organizer camp router (manager-gated); schedule,
+  announcements, and leaderboard mount under the shared `campRouter` (member-read,
+  manager-write). **Team** (`/organizer/team`, cross-camp) is backed by organizer-tier
+  `Membership` rows (`active` = member, `pending` = invite) — the invite sub-role
+  guardrail lives in `team.validators` (a `z.enum` of the 7 sub-roles, so a body
+  granting a peer `organizer`/`organization` fails validation). _Known limitation:_ a
+  team invite attaches to the caller's newest camp (Membership is camp-keyed); a true
+  cross-camp team model is a follow-up (see the `TODO(multi-camp)` in
+  `team.services`).
+
+Design + plan: `docs/superpowers/specs/2026-07-12-organizer-crud-endpoints-design.md`,
+`docs/superpowers/plans/2026-07-12-organizer-crud-endpoints.md`.
 
 ## Deploy caveat — cross-origin cookies
 
@@ -108,7 +165,7 @@ with the right options). (A fresh DB is never affected.)
 
 > **Hit in practice (2026-07-12):** `phone_1` existed as `unique` but **not
 > `sparse`** in the dev DB (built before `phone` became optional). Creating a
-> phone-less *pending* organizer collided with the org's `null` phone
+> phone-less _pending_ organizer collided with the org's `null` phone
 > (`E11000 … phone: null`). Fix was `db.users.dropIndex('phone_1')` +
 > `createIndex({phone:1},{unique:true,sparse:true})`. The schema was already correct.
 

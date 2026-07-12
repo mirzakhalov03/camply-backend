@@ -7,6 +7,27 @@ import {
   organizerIdParam,
 } from '../validators/organizer.validators'
 import { acceptInviteSchema } from '../validators/invite.validators'
+import { createCampSchema, updateCampSchema, campIdParam } from '../validators/camp.validators'
+import {
+  rosterIdParams,
+  addRosterSchema,
+  updateRosterSchema,
+  checkinSchema,
+} from '../validators/roster.validators'
+import { groupIdParams, createGroupSchema, updateGroupSchema } from '../validators/group.validators'
+import {
+  activityIdParams,
+  createActivitySchema,
+  updateActivitySchema,
+} from '../validators/schedule.validators'
+import {
+  announcementIdParams,
+  createAnnouncementSchema,
+  updateAnnouncementSchema,
+  pinSchema,
+} from '../validators/announcement.validators'
+import { leaderboardParams, adjustPointsSchema } from '../validators/leaderboard.validators'
+import { inviteTeamSchema, teamInviteIdParam } from '../validators/team.validators'
 
 const registry = new OpenAPIRegistry()
 
@@ -22,6 +43,7 @@ const PublicUserSchema = registry.register(
     cityId: z.string().nullable().openapi({ example: 'Tashkent' }),
     age: z.number().nullable().openapi({ example: 16 }),
     photo: z.string().nullable().openapi({ example: null }),
+    subRole: z.string().nullable().openapi({ example: null }),
     profileComplete: z.boolean().openapi({ example: false }),
   }),
 )
@@ -52,6 +74,40 @@ const InviteActionResponse = z.object({
   organizer: PublicOrganizerSchema,
   inviteUrl: z.string().optional().openapi({ example: 'http://localhost:5173/invite/abc123' }),
 })
+
+// ── Camp schemas ──────────────────────────────────────────────────────────
+const CreateCampInput = registry.register('CreateCampInput', createCampSchema)
+const UpdateCampInput = registry.register('UpdateCampInput', updateCampSchema)
+
+const OrganizerCampSchema = registry.register(
+  'OrganizerCamp',
+  z.object({
+    id: z.string(),
+    name: z.string().openapi({ example: 'Summer Leadership Camp' }),
+    location: z.string().openapi({ example: 'Chimgan' }),
+    dateRange: z.string().openapi({ example: 'Jul 6 – Jul 19' }),
+    status: z.enum(['active', 'upcoming', 'draft', 'archived']),
+    participantCount: z.number(),
+    groupCount: z.number(),
+    organizerCount: z.number(),
+    checkinPct: z.number(),
+    dayCurrent: z.number(),
+    dayTotal: z.number(),
+    coverImage: z.string().nullable(),
+  }),
+)
+const OrganizerSummarySchema = registry.register(
+  'OrganizerSummary',
+  z.object({
+    organizerName: z.string(),
+    organizationName: z.string(),
+    totalParticipants: z.number(),
+    activeCamps: z.number(),
+    totalGroups: z.number(),
+    unreadChat: z.number(),
+    onSite: z.number(),
+  }),
+)
 
 // ── Paths ─────────────────────────────────────────────────────────────────
 registry.registerPath({
@@ -243,6 +299,670 @@ registry.registerPath({
   responses: {
     200: { description: 'Accepted; sets the camply_sid cookie' },
     409: { description: 'Phone already registered' },
+  },
+})
+
+// ── Camps ───────────────────────────────────────────────────────────────
+registry.registerPath({
+  method: 'get',
+  path: '/api/organizer/camps',
+  tags: ['Camps'],
+  summary: 'List the camps the organizer runs (newest first)',
+  responses: {
+    200: {
+      description: 'Organizer camps',
+      content: { 'application/json': { schema: z.array(OrganizerCampSchema) } },
+    },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+  },
+})
+registry.registerPath({
+  method: 'get',
+  path: '/api/organizer/summary',
+  tags: ['Camps'],
+  summary: 'Cross-camp totals for the organizer dashboard header',
+  responses: {
+    200: {
+      description: 'Summary totals',
+      content: { 'application/json': { schema: OrganizerSummarySchema } },
+    },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/organizer/camps',
+  tags: ['Camps'],
+  summary: 'Create a camp (status draft)',
+  request: { body: { content: { 'application/json': { schema: CreateCampInput } } } },
+  responses: {
+    201: {
+      description: 'Created camp',
+      content: { 'application/json': { schema: OrganizerCampSchema } },
+    },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+  },
+})
+registry.registerPath({
+  method: 'get',
+  path: '/api/organizer/camps/{id}',
+  tags: ['Camps'],
+  summary: 'One camp (management projection)',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Camp',
+      content: { 'application/json': { schema: OrganizerCampSchema } },
+    },
+    403: { description: 'Not a manager of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+registry.registerPath({
+  method: 'patch',
+  path: '/api/organizer/camps/{id}',
+  tags: ['Camps'],
+  summary: 'Edit a camp',
+  request: {
+    params: campIdParam,
+    body: { content: { 'application/json': { schema: UpdateCampInput } } },
+  },
+  responses: {
+    200: {
+      description: 'Updated camp',
+      content: { 'application/json': { schema: OrganizerCampSchema } },
+    },
+    403: { description: 'Not a manager of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/organizer/camps/{id}/publish',
+  tags: ['Camps'],
+  summary: 'Publish a draft camp',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Published camp',
+      content: { 'application/json': { schema: OrganizerCampSchema } },
+    },
+    403: { description: 'Not a manager of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/organizer/camps/{id}/archive',
+  tags: ['Camps'],
+  summary: 'Manually archive a camp',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Archived camp',
+      content: { 'application/json': { schema: OrganizerCampSchema } },
+    },
+    403: { description: 'Not a manager of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+registry.registerPath({
+  method: 'delete',
+  path: '/api/organizer/camps/{id}',
+  tags: ['Camps'],
+  summary: 'Delete a camp (only while draft)',
+  request: { params: campIdParam },
+  responses: {
+    204: { description: 'Deleted' },
+    403: { description: 'Not a manager of this camp' },
+    404: { description: 'Camp not found' },
+    409: { description: 'Only draft camps can be deleted' },
+  },
+})
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}',
+  tags: ['Camps'],
+  summary: 'One camp (shared read projection — participants included)',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Camp',
+      content: { 'application/json': { schema: OrganizerCampSchema } },
+    },
+    403: { description: 'Not a member of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+
+// ── Roster ──────────────────────────────────────────────────────────────
+const RosterParticipantSchema = registry.register(
+  'RosterParticipant',
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    initials: z.string(),
+    avatarColor: z.string(),
+    photo: z.string().nullable(),
+    groupId: z.string().nullable(),
+    groupName: z.string().nullable(),
+    city: z.string(),
+    age: z.number(),
+    status: z.enum(['in', 'out']),
+    phone: z.string(),
+  }),
+)
+const AddRosterInput = registry.register('AddRosterInput', addRosterSchema)
+const UpdateRosterInput = registry.register('UpdateRosterInput', updateRosterSchema)
+const CheckinInput = registry.register('CheckinInput', checkinSchema)
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/organizer/camps/{id}/roster',
+  tags: ['Roster'],
+  summary: 'The camp roster (participants, alphabetical)',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Roster rows',
+      content: { 'application/json': { schema: z.array(RosterParticipantSchema) } },
+    },
+    403: { description: 'Not a manager of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/organizer/camps/{id}/roster',
+  tags: ['Roster'],
+  summary: 'Add a participant by phone (≤2 camps enforced)',
+  request: {
+    params: campIdParam,
+    body: { content: { 'application/json': { schema: AddRosterInput } } },
+  },
+  responses: {
+    201: {
+      description: 'Added roster row (pending until the phone signs in)',
+      content: { 'application/json': { schema: RosterParticipantSchema } },
+    },
+    403: { description: 'Not a manager of this camp' },
+    409: { description: 'This phone is already in 2 camps' },
+  },
+})
+registry.registerPath({
+  method: 'patch',
+  path: '/api/organizer/camps/{id}/roster/{mid}',
+  tags: ['Roster'],
+  summary: 'Reassign group / set role',
+  request: {
+    params: rosterIdParams,
+    body: { content: { 'application/json': { schema: UpdateRosterInput } } },
+  },
+  responses: {
+    200: {
+      description: 'Updated row',
+      content: { 'application/json': { schema: RosterParticipantSchema } },
+    },
+    404: { description: 'Membership not found' },
+  },
+})
+registry.registerPath({
+  method: 'patch',
+  path: '/api/organizer/camps/{id}/roster/{mid}/checkin',
+  tags: ['Roster'],
+  summary: 'Toggle check-in in/out',
+  request: {
+    params: rosterIdParams,
+    body: { content: { 'application/json': { schema: CheckinInput } } },
+  },
+  responses: {
+    200: {
+      description: 'Updated row',
+      content: { 'application/json': { schema: RosterParticipantSchema } },
+    },
+    404: { description: 'Membership not found' },
+  },
+})
+registry.registerPath({
+  method: 'delete',
+  path: '/api/organizer/camps/{id}/roster/{mid}',
+  tags: ['Roster'],
+  summary: 'Remove a participant from the camp',
+  request: { params: rosterIdParams },
+  responses: {
+    204: { description: 'Removed' },
+    404: { description: 'Membership not found' },
+  },
+})
+
+// ── Groups ──────────────────────────────────────────────────────────────
+const CampGroupDetailSchema = registry.register(
+  'CampGroupDetail',
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    color: z.string(),
+    memberCount: z.number(),
+    leaderName: z.string().nullable(),
+    members: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        initials: z.string(),
+        avatarColor: z.string(),
+        photo: z.string().nullable(),
+        isLeader: z.boolean(),
+      }),
+    ),
+  }),
+)
+const CreateGroupInput = registry.register('CreateGroupInput', createGroupSchema)
+const UpdateGroupInput = registry.register('UpdateGroupInput', updateGroupSchema)
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/organizer/camps/{id}/groups',
+  tags: ['Groups'],
+  summary: 'Groups of a camp (members + leader)',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Groups',
+      content: { 'application/json': { schema: z.array(CampGroupDetailSchema) } },
+    },
+    403: { description: 'Not a manager of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/organizer/camps/{id}/groups',
+  tags: ['Groups'],
+  summary: 'Create a group',
+  request: {
+    params: campIdParam,
+    body: { content: { 'application/json': { schema: CreateGroupInput } } },
+  },
+  responses: {
+    201: {
+      description: 'Created group',
+      content: { 'application/json': { schema: CampGroupDetailSchema } },
+    },
+    403: { description: 'Not a manager of this camp' },
+  },
+})
+registry.registerPath({
+  method: 'patch',
+  path: '/api/organizer/camps/{id}/groups/{gid}',
+  tags: ['Groups'],
+  summary: 'Rename / recolor / set leader',
+  request: {
+    params: groupIdParams,
+    body: { content: { 'application/json': { schema: UpdateGroupInput } } },
+  },
+  responses: {
+    200: {
+      description: 'Updated group',
+      content: { 'application/json': { schema: CampGroupDetailSchema } },
+    },
+    404: { description: 'Group not found' },
+  },
+})
+registry.registerPath({
+  method: 'delete',
+  path: '/api/organizer/camps/{id}/groups/{gid}',
+  tags: ['Groups'],
+  summary: 'Delete a group (unassigns its members)',
+  request: { params: groupIdParams },
+  responses: {
+    204: { description: 'Deleted' },
+    404: { description: 'Group not found' },
+  },
+})
+
+// ── Schedule ────────────────────────────────────────────────────────────
+const ActivityScopeSchema = z.union([
+  z.object({ kind: z.literal('camp') }),
+  z.object({ kind: z.literal('group'), groupId: z.string(), groupName: z.string() }),
+])
+const ActivitySchema = registry.register(
+  'Activity',
+  z.object({
+    id: z.string(),
+    campId: z.string(),
+    title: z.string(),
+    location: z.string(),
+    startsAt: z.string(),
+    endsAt: z.string(),
+    scope: ActivityScopeSchema,
+    description: z.string().nullable(),
+  }),
+)
+const CreateActivityInput = registry.register('CreateActivityInput', createActivitySchema)
+const UpdateActivityInput = registry.register('UpdateActivityInput', updateActivitySchema)
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}/schedule',
+  tags: ['Schedule'],
+  summary: 'All activities of a camp (member read)',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Activities, earliest first',
+      content: { 'application/json': { schema: z.array(ActivitySchema) } },
+    },
+    403: { description: 'Not a member of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/camps/{id}/schedule',
+  tags: ['Schedule'],
+  summary: 'Create an activity (manager)',
+  request: {
+    params: campIdParam,
+    body: { content: { 'application/json': { schema: CreateActivityInput } } },
+  },
+  responses: {
+    201: {
+      description: 'Created activity',
+      content: { 'application/json': { schema: ActivitySchema } },
+    },
+    403: { description: 'Not a manager of this camp' },
+  },
+})
+registry.registerPath({
+  method: 'patch',
+  path: '/api/camps/{id}/schedule/{aid}',
+  tags: ['Schedule'],
+  summary: 'Edit an activity (manager)',
+  request: {
+    params: activityIdParams,
+    body: { content: { 'application/json': { schema: UpdateActivityInput } } },
+  },
+  responses: {
+    200: {
+      description: 'Updated activity',
+      content: { 'application/json': { schema: ActivitySchema } },
+    },
+    404: { description: 'Activity not found' },
+  },
+})
+registry.registerPath({
+  method: 'delete',
+  path: '/api/camps/{id}/schedule/{aid}',
+  tags: ['Schedule'],
+  summary: 'Delete an activity (manager)',
+  request: { params: activityIdParams },
+  responses: {
+    204: { description: 'Deleted' },
+    404: { description: 'Activity not found' },
+  },
+})
+
+// ── Announcements ───────────────────────────────────────────────────────
+const AnnouncementSchema = registry.register(
+  'Announcement',
+  z.object({
+    id: z.string(),
+    campId: z.string(),
+    title: z.string().optional(),
+    body: z.string(),
+    scope: ActivityScopeSchema,
+    author: z.object({
+      id: z.string(),
+      name: z.string(),
+      role: z.enum(['organizer', 'organization']),
+      avatarColor: z.string(),
+      photo: z.string().nullable(),
+    }),
+    pinned: z.boolean(),
+    createdAt: z.string(),
+    updatedAt: z.string().optional(),
+  }),
+)
+const CreateAnnouncementInput = registry.register(
+  'CreateAnnouncementInput',
+  createAnnouncementSchema,
+)
+const UpdateAnnouncementInput = registry.register(
+  'UpdateAnnouncementInput',
+  updateAnnouncementSchema,
+)
+const PinInput = registry.register('PinInput', pinSchema)
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}/announcements',
+  tags: ['Announcements'],
+  summary: 'Announcements of a camp (pinned first)',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Announcements',
+      content: { 'application/json': { schema: z.array(AnnouncementSchema) } },
+    },
+    403: { description: 'Not a member of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}/announcements/{aid}',
+  tags: ['Announcements'],
+  summary: 'One announcement',
+  request: { params: announcementIdParams },
+  responses: {
+    200: {
+      description: 'Announcement',
+      content: { 'application/json': { schema: AnnouncementSchema } },
+    },
+    404: { description: 'Announcement not found' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/camps/{id}/announcements',
+  tags: ['Announcements'],
+  summary: 'Post an announcement (manager)',
+  request: {
+    params: campIdParam,
+    body: { content: { 'application/json': { schema: CreateAnnouncementInput } } },
+  },
+  responses: {
+    201: {
+      description: 'Created announcement',
+      content: { 'application/json': { schema: AnnouncementSchema } },
+    },
+    403: { description: 'Not a manager of this camp' },
+  },
+})
+registry.registerPath({
+  method: 'patch',
+  path: '/api/camps/{id}/announcements/{aid}',
+  tags: ['Announcements'],
+  summary: 'Edit an announcement (manager)',
+  request: {
+    params: announcementIdParams,
+    body: { content: { 'application/json': { schema: UpdateAnnouncementInput } } },
+  },
+  responses: {
+    200: {
+      description: 'Updated announcement',
+      content: { 'application/json': { schema: AnnouncementSchema } },
+    },
+    404: { description: 'Announcement not found' },
+  },
+})
+registry.registerPath({
+  method: 'patch',
+  path: '/api/camps/{id}/announcements/{aid}/pin',
+  tags: ['Announcements'],
+  summary: 'Pin / unpin an announcement (manager)',
+  request: {
+    params: announcementIdParams,
+    body: { content: { 'application/json': { schema: PinInput } } },
+  },
+  responses: {
+    200: {
+      description: 'Updated announcement',
+      content: { 'application/json': { schema: AnnouncementSchema } },
+    },
+    404: { description: 'Announcement not found' },
+  },
+})
+registry.registerPath({
+  method: 'delete',
+  path: '/api/camps/{id}/announcements/{aid}',
+  tags: ['Announcements'],
+  summary: 'Delete an announcement (manager)',
+  request: { params: announcementIdParams },
+  responses: {
+    204: { description: 'Deleted' },
+    404: { description: 'Announcement not found' },
+  },
+})
+
+// ── Leaderboard ─────────────────────────────────────────────────────────
+const LeaderboardSchema = registry.register(
+  'Leaderboard',
+  z.object({
+    periodLabel: z.string(),
+    currentGroupId: z.string().nullable(),
+    groups: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        color: z.string(),
+        photo: z.string().optional(),
+        score: z.number(),
+        previousScore: z.number(),
+        breakdown: z.object({
+          activities: z.number(),
+          attendance: z.number(),
+          challenges: z.number(),
+        }),
+      }),
+    ),
+  }),
+)
+const AdjustPointsInput = registry.register('AdjustPointsInput', adjustPointsSchema)
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}/leaderboard',
+  tags: ['Leaderboard'],
+  summary: 'Group standings + categories (member read)',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Leaderboard',
+      content: { 'application/json': { schema: LeaderboardSchema } },
+    },
+    403: { description: 'Not a member of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/camps/{id}/leaderboard/{gid}/points',
+  tags: ['Leaderboard'],
+  summary: 'Adjust a group’s points in a category (manager)',
+  request: {
+    params: leaderboardParams,
+    body: { content: { 'application/json': { schema: AdjustPointsInput } } },
+  },
+  responses: {
+    204: { description: 'Adjusted' },
+    403: { description: 'Not a manager of this camp' },
+    404: { description: 'Group has no leaderboard row' },
+  },
+})
+
+// ── Team ────────────────────────────────────────────────────────────────
+const SUB_ROLE = z.enum([
+  'projectManager',
+  'coordinator',
+  'admin',
+  'media',
+  'brandFace',
+  'eventManager',
+  'photographer',
+])
+const TeamSchema = registry.register(
+  'Team',
+  z.object({
+    organizationName: z.string(),
+    members: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        initials: z.string(),
+        avatarColor: z.string(),
+        photo: z.string().nullable(),
+        role: SUB_ROLE,
+        isMe: z.boolean().optional(),
+      }),
+    ),
+    pending: z.array(
+      z.object({
+        id: z.string(),
+        phone: z.string(),
+        role: SUB_ROLE,
+        sentAt: z.string(),
+      }),
+    ),
+  }),
+)
+const InviteTeamInput = registry.register('InviteTeamInput', inviteTeamSchema)
+const PendingInviteSchema = registry.register(
+  'PendingInvite',
+  z.object({ id: z.string(), phone: z.string(), role: SUB_ROLE, sentAt: z.string() }),
+)
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/organizer/team',
+  tags: ['Team'],
+  summary: 'The organizer team + pending invites (organizer only)',
+  responses: {
+    200: {
+      description: 'Team',
+      content: { 'application/json': { schema: TeamSchema } },
+    },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/organizer/team/invites',
+  tags: ['Team'],
+  summary: 'Invite a teammate by phone + sub-role (never a peer organizer)',
+  request: { body: { content: { 'application/json': { schema: InviteTeamInput } } } },
+  responses: {
+    201: {
+      description: 'Pending invite',
+      content: { 'application/json': { schema: PendingInviteSchema } },
+    },
+    403: { description: 'Insufficient permissions' },
+    409: { description: 'Create a camp first / phone already on the team' },
+  },
+})
+registry.registerPath({
+  method: 'delete',
+  path: '/api/organizer/team/invites/{id}',
+  tags: ['Team'],
+  summary: 'Cancel a pending invite (organizer only)',
+  request: { params: teamInviteIdParam },
+  responses: {
+    204: { description: 'Cancelled' },
+    404: { description: 'Invite not found' },
   },
 })
 
