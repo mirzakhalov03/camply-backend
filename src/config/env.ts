@@ -16,6 +16,16 @@ const envSchema = z.object({
   // The org logs in by username (not phone); dev defaults are admin / 1234.
   SEED_ORG_USERNAME: z.string().min(1).default('admin'),
   SEED_ORG_PASSWORD: z.string().min(1).default('1234'),
+  // Invite emails (organizer onboarding). APP_URL is the frontend base for the
+  // magic link. SMTP_* optional — if unset, dev uses a nodemailer Ethereal test
+  // account (preview URL logged; no real delivery).
+  APP_URL: z.string().default('http://localhost:5173'),
+  MAIL_FROM: z.string().default('Camply <no-reply@camply.dev>'),
+  INVITE_TTL_DAYS: z.coerce.number().default(7),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)

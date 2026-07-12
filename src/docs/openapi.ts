@@ -6,6 +6,7 @@ import {
   updateOrganizerSchema,
   organizerIdParam,
 } from '../validators/organizer.validators'
+import { acceptInviteSchema } from '../validators/invite.validators'
 
 const registry = new OpenAPIRegistry()
 
@@ -36,15 +37,21 @@ const PublicOrganizerSchema = registry.register(
   'PublicOrganizer',
   z.object({
     id: z.string().openapi({ example: '665f1b2c9d1e4a0012a3b4c5' }),
+    email: z.string().nullable().openapi({ example: 'aziz@example.com' }),
     phone: z.string().nullable().openapi({ example: '+998901234567' }),
     name: z.string().openapi({ example: 'Aziz' }),
     surname: z.string().openapi({ example: 'Karimov' }),
-    active: z.boolean().openapi({ example: true }),
+    status: z.enum(['pending', 'active', 'deactivated']).openapi({ example: 'pending' }),
     createdAt: z.string().openapi({ example: '2026-07-12T10:00:00.000Z' }),
   }),
 )
 const OrganizerResponse = z.object({ organizer: PublicOrganizerSchema })
 const OrganizersListResponse = z.object({ organizers: z.array(PublicOrganizerSchema) })
+// Create/resend also return the dev-only invite link so the org can test without an inbox.
+const InviteActionResponse = z.object({
+  organizer: PublicOrganizerSchema,
+  inviteUrl: z.string().optional().openapi({ example: 'http://localhost:5173/invite/abc123' }),
+})
 
 // ── Paths ─────────────────────────────────────────────────────────────────
 registry.registerPath({
@@ -145,16 +152,49 @@ registry.registerPath({
   method: 'post',
   path: '/api/organizers',
   tags: ['Organizers'],
-  summary: 'Create an organizer (organization only)',
+  summary: 'Invite an organizer by email (organization only)',
   request: { body: { content: { 'application/json': { schema: CreateOrganizerInput } } } },
   responses: {
     201: {
-      description: 'Organizer created',
-      content: { 'application/json': { schema: OrganizerResponse } },
+      description: 'Pending organizer created; invite emailed (inviteUrl returned in dev)',
+      content: { 'application/json': { schema: InviteActionResponse } },
     },
     401: { description: 'Not authenticated' },
     403: { description: 'Insufficient permissions' },
-    409: { description: 'Phone already registered' },
+    409: { description: 'Email already registered' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/organizers/{id}/resend',
+  tags: ['Organizers'],
+  summary: 'Resend a pending organizer invite (organization only)',
+  request: { params: organizerIdParam },
+  responses: {
+    200: {
+      description: 'Invite re-issued and emailed (inviteUrl returned in dev)',
+      content: { 'application/json': { schema: InviteActionResponse } },
+    },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+    404: { description: 'Organizer not found' },
+    409: { description: 'Organizer already active' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/organizers/{id}',
+  tags: ['Organizers'],
+  summary: 'Revoke a pending invite — deletes the stub (organization only)',
+  request: { params: organizerIdParam },
+  responses: {
+    204: { description: 'Invite revoked' },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+    404: { description: 'Organizer not found' },
+    409: { description: 'Organizer already active — deactivate instead' },
   },
 })
 
@@ -175,6 +215,34 @@ registry.registerPath({
     401: { description: 'Not authenticated' },
     403: { description: 'Insufficient permissions' },
     404: { description: 'Organizer not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/invite/{token}',
+  tags: ['Invite'],
+  summary: 'Public: fetch an organizer invite for the accept screen',
+  responses: {
+    200: {
+      description: 'Invitee name + email',
+      content: {
+        'application/json': { schema: z.object({ name: z.string(), email: z.string() }) },
+      },
+    },
+    404: { description: 'Invalid invite' },
+    410: { description: 'Invite expired' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/invite/{token}/accept',
+  tags: ['Invite'],
+  summary: 'Public: accept an invite by supplying a phone; starts a session',
+  request: { body: { content: { 'application/json': { schema: acceptInviteSchema } } } },
+  responses: {
+    200: { description: 'Accepted; sets the camply_sid cookie' },
+    409: { description: 'Phone already registered' },
   },
 })
 

@@ -61,9 +61,24 @@ Express 5 · Mongoose 9 (MongoDB) · Zod 4 · TypeScript (strict, CommonJS).
   deactivated organizer can't sign in **or** ride an existing session. Deactivating
   also calls `sessionService.revokeAllForUser` to kill live sessions immediately.
 - **`organizers` domain** (`routes/services/controllers/validators/organizer.*`),
-  org-only, extracted out of `auth.*`: `GET /organizers` (list), `POST /organizers`
-  (create), `PATCH /organizers/:id` (`{ active }` — deactivate/reactivate). The old
-  `authService.createOrganizer` moved here.
+  org-only, extracted out of `auth.*`. Organizers are now onboarded by **emailed
+  magic link**, not created fully-formed: `POST /organizers` takes `{name, surname,
+  email}`, creates a **pending** organizer (no phone, no password), issues an
+  `Invite` token, and emails a link (returns `inviteUrl` in dev). `POST
+  /organizers/:id/resend` re-issues the token; `DELETE /organizers/:id` revokes a
+  pending invite (deletes the stub user). `PATCH /organizers/:id` (`{ active }`)
+  deactivates/reactivates an *accepted* organizer. Status is **derived** in
+  `toPublicOrganizer` (`phone == null` → `pending`, else `active`/`deactivated`), not
+  stored. The old password-based `create` is gone (organizers log in by phone).
+- **Invite onboarding** (`models/invite.model.ts`, `services/invite.services.ts`,
+  `services/mailer.service.ts`, public `routes/invite.routes.ts`). The `Invite` model
+  mirrors `session.model.ts` (sha256 of the token, TTL index, single-use). Public,
+  token-gated (no `requireAuth`): `GET /invite/:token` → `{name, email}` for the
+  accept screen; `POST /invite/:token/accept` `{phone}` binds the phone, activates the
+  user, deletes the invite, and **starts a session** (sets `camply_sid`) — same shape
+  as login. Mailer uses nodemailer: real SMTP if `SMTP_*` env is set, else a dev
+  **Ethereal** test account (preview URL logged, no real delivery). `User` gained a
+  sparse-unique `email` field.
 - **Participants authenticate by phone alone** (no secret yet). The `/login` and
   `/register` handlers are shaped so an OTP verification step drops in later
   without changing `/me`, sessions, or authorization. Org/organizer accounts use a
@@ -84,10 +99,18 @@ origin** than the app, the session cookie needs `SameSite=None; Secure` and CORS
 
 ## Known gotcha — stale Mongo indexes
 
-Mongoose does **not** drop indexes you stop declaring. If you remove a `unique`
-field from a schema, its old index lingers in any DB that already ran the previous
-schema and can cause spurious `E11000 duplicate key` errors. Drop it manually in
-that DB: `db.collection.dropIndex('field_1')`. (A fresh DB is never affected.)
+Mongoose does **not** drop indexes you stop declaring, nor **alter** an index whose
+options changed. If you remove a `unique` field — or add `sparse` to an existing
+unique index — the old index lingers in any DB that already ran the previous schema
+and can cause spurious `E11000 duplicate key` errors. Drop it manually in that DB:
+`db.collection.dropIndex('field_1')` (then let Mongoose rebuild it, or recreate it
+with the right options). (A fresh DB is never affected.)
+
+> **Hit in practice (2026-07-12):** `phone_1` existed as `unique` but **not
+> `sparse`** in the dev DB (built before `phone` became optional). Creating a
+> phone-less *pending* organizer collided with the org's `null` phone
+> (`E11000 … phone: null`). Fix was `db.users.dropIndex('phone_1')` +
+> `createIndex({phone:1},{unique:true,sparse:true})`. The schema was already correct.
 
 ## Keep this file current
 
