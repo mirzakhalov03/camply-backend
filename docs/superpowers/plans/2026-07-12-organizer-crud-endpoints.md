@@ -273,11 +273,13 @@ Note the file that augments Express `Request` (the auth design added it). Add `c
 In that augmentation file, add to the `Request` interface:
 
 ```ts
+import type { HydratedDocument } from 'mongoose'
 import type { Camp } from '../models/camp.model'
 import type { Membership } from '../models/membership.model'
-// ...inside the augmented Request interface:
-camp?: Camp
-membership?: Membership | null
+// ...inside the augmented Request interface (mirror the existing `auth?` entry,
+// which already uses HydratedDocument — so req.camp.save() typechecks):
+camp?: HydratedDocument<Camp>
+membership?: HydratedDocument<Membership> | null
 ```
 
 - [ ] **Step 3: Write `campScope.middleware.ts`**
@@ -387,6 +389,7 @@ export const updateCampSchema = createCampSchema.partial()
 import { CampModel, type Camp } from '../models/camp.model'
 import { MembershipModel } from '../models/membership.model'
 import { GroupModel } from '../models/group.model'
+import { UserModel } from '../models/user.model'
 import { HttpError } from '../middlewares/error.middleware'
 
 export type PublicCampStatus = 'draft' | 'upcoming' | 'active' | 'archived'
@@ -463,7 +466,15 @@ export const campService = {
 
   getOne: async (camp: Camp) => toOrganizerCamp(camp), // camp resolved by middleware
 
-  create: async (input: CreateInput, creator: { _id: unknown; role: string; phone?: string }, organizationId: unknown) => {
+  // Single-org launch: there is NO organizationId on User. Resolve the one seeded
+  // organization here (its _id is the camp's organizationId). When an org account
+  // itself creates a camp, it IS the org. Thread a real org id when multi-org lands.
+  create: async (input: CreateInput, creator: { _id: unknown; role: string; phone?: string }) => {
+    const organizationId =
+      creator.role === 'organization'
+        ? creator._id
+        : (await UserModel.findOne({ role: 'organization' }).select('_id'))?._id
+    if (!organizationId) throw new HttpError(500, 'No organization provisioned')
     const camp = await CampModel.create({
       ...input,
       startsAt: new Date(input.startsAt),
@@ -543,9 +554,9 @@ export const getCamp: RequestHandler = async (req, res) => {
   res.json(await campService.getOne(req.camp!))
 }
 export const createCamp: RequestHandler = async (req, res) => {
-  const user = req.auth!.user as never as { _id: unknown; role: string; organizationId?: unknown }
-  const organizationId = user.role === 'organization' ? user._id : (user as { organizationId: unknown }).organizationId
-  res.status(201).json(await campService.create(req.body, user as never, organizationId ?? user._id))
+  // req.auth.user is a HydratedDocument<User> (_id/role/phone typed). The service
+  // resolves the organizationId (single-org launch) — the controller stays thin.
+  res.status(201).json(await campService.create(req.body, req.auth!.user))
 }
 export const updateCamp: RequestHandler = async (req, res) => {
   res.json(await campService.update(req.camp!, req.body))
@@ -562,7 +573,7 @@ export const deleteCamp: RequestHandler = async (req, res) => {
 }
 ```
 
-Note on `organizationId`: an organizer has no `organizationId` on `User` today. Resolve it from the seed org — if the app has exactly one organization, look it up: `const org = await UserModel.findOne({ role: 'organization' })`. Do this in the service `create` instead of the controller if cleaner. Adjust to however the org linkage is modeled once multi-org exists (single-org for launch).
+Note: `organizationId` resolution lives in `campService.create` (Step 3) — there is no `organizationId` field on `User` today, so it looks up the single seeded organization. Thread a real org id through when multi-org lands.
 
 - [ ] **Step 5: Write `camp.routes.ts`**
 
@@ -1311,7 +1322,7 @@ export const teamInviteIdParam = z.object({ id: z.string() })
 
 ## Notes for the executor
 
-- **Mongoose document typing:** `InferSchemaType` gives the *data* shape, not the hydrated document (no `.save()`/`._id` typing). If the existing models expose a `HydratedDocument` alias, use it and drop the `as unknown as { save }` casts shown above. Keep it consistent with `user.model.ts`.
+- **Mongoose document typing (confirmed convention):** the codebase types hydrated docs with `HydratedDocument<T>` — see `src/types/express.d.ts` (`user: HydratedDocument<User>`). `InferSchemaType` gives only the *data* shape (no `.save()`/`._id`). So: type any service param that calls `.save()` as `HydratedDocument<Camp>` (import from `mongoose`), and drop the `as unknown as { save }` casts shown in the samples — they're a fallback only if you keep the lean `Camp` type. `Model.findById()` already returns `HydratedDocument<Camp> | null`, and `req.camp` is augmented as `HydratedDocument<Camp>` (Task 3), so those flow through without casting.
 - **`req.auth!.user._id`:** the auth augmentation types `user` as the Mongoose `User`. If `_id` types as `unknown`, wrap in `String(...)` (already done in the samples) — never compare ObjectIds with `===` directly.
 - **`mergeParams: true`** is mandatory on every sub-router mounted under `/camps/:id/...` or `/organizer/camps/:id/...`, or `requireCampMember` won't see `req.params.id`.
 - **Frontend commits go in the Frontend repo, backend commits in the Backend repo** (two separate git repos; root is not one).
