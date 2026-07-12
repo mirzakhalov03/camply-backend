@@ -30,8 +30,8 @@ function toPublicOrganizer(user: HydratedDocument<User>): PublicOrganizer {
     id: String(user._id),
     email: user.email ?? null,
     phone: user.phone ?? null,
-    name: user.name,
-    surname: user.surname,
+    name: user.name ?? '',
+    surname: user.surname ?? '',
     status: statusOf(user),
     createdAt: (user as unknown as { createdAt: Date }).createdAt.toISOString(),
   }
@@ -61,7 +61,7 @@ export const organizerService = {
 
     const rawToken = await inviteService.createInvite(user._id, email)
     const inviteUrl = `${env.APP_URL}/invite/${rawToken}`
-    await mailer.sendOrganizerInvite({ to: email, name: user.name, link: inviteUrl })
+    await mailer.sendOrganizerInvite({ to: email, name: user.name ?? '', link: inviteUrl })
 
     // Expose the link in dev only, so the org can test without a real inbox.
     return {
@@ -78,7 +78,7 @@ export const organizerService = {
     const email = user.email ?? ''
     const rawToken = await inviteService.createInvite(user._id, email)
     const inviteUrl = `${env.APP_URL}/invite/${rawToken}`
-    await mailer.sendOrganizerInvite({ to: email, name: user.name, link: inviteUrl })
+    await mailer.sendOrganizerInvite({ to: email, name: user.name ?? '', link: inviteUrl })
     return {
       organizer: toPublicOrganizer(user),
       ...(env.NODE_ENV !== 'production' ? { inviteUrl } : {}),
