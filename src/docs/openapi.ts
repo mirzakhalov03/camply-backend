@@ -6,7 +6,6 @@ import {
   updateOrganizerSchema,
   organizerIdParam,
 } from '../validators/organizer.validators'
-import { acceptInviteSchema } from '../validators/invite.validators'
 import { createCampSchema, updateCampSchema, campIdParam } from '../validators/camp.validators'
 import {
   rosterIdParams,
@@ -208,7 +207,7 @@ registry.registerPath({
   method: 'post',
   path: '/api/organizers',
   tags: ['Organizers'],
-  summary: 'Invite an organizer by email (organization only)',
+  summary: 'Invite an organizer by name, email + phone (organization only)',
   request: { body: { content: { 'application/json': { schema: CreateOrganizerInput } } } },
   responses: {
     201: {
@@ -294,11 +293,11 @@ registry.registerPath({
   method: 'post',
   path: '/api/invite/{token}/accept',
   tags: ['Invite'],
-  summary: 'Public: accept an invite by supplying a phone; starts a session',
-  request: { body: { content: { 'application/json': { schema: acceptInviteSchema } } } },
+  summary: 'Public: accept an invite (no body — phone set at invite time); starts a session',
   responses: {
     200: { description: 'Accepted; sets the camply_sid cookie' },
-    409: { description: 'Phone already registered' },
+    404: { description: 'Invalid invite' },
+    410: { description: 'Invite expired' },
   },
 })
 

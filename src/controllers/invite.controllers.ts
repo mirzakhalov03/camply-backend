@@ -10,7 +10,6 @@ export const getInvite: RequestHandler = async (req, res) => {
 export const acceptInvite: RequestHandler = async (req, res) => {
   const { token, user } = await inviteService.accept(
     String(req.params.token),
-    req.body.phone,
     req.get('user-agent'),
   )
   res.cookie(SESSION_COOKIE_NAME, token, setCookieOptions())

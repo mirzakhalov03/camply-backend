@@ -63,20 +63,26 @@ Express 5 · Mongoose 9 (MongoDB) · Zod 4 · TypeScript (strict, CommonJS).
 - **`organizers` domain** (`routes/services/controllers/validators/organizer.*`),
   org-only, extracted out of `auth.*`. Organizers are now onboarded by **emailed
   magic link**, not created fully-formed: `POST /organizers` takes `{name, surname,
-email}`, creates a **pending** organizer (no phone, no password), issues an
-  `Invite` token, and emails a link (returns `inviteUrl` in dev). `POST
+email, phone}`, records the (canonicalized, unique-checked) phone, creates a
+  **pending** organizer (no password), issues an `Invite` token, and emails a link
+  (returns `inviteUrl` in dev). `POST
 /organizers/:id/resend` re-issues the token; `DELETE /organizers/:id` revokes a
   pending invite (deletes the stub user). `PATCH /organizers/:id` (`{ active }`)
   deactivates/reactivates an _accepted_ organizer. Status is **derived** in
-  `toPublicOrganizer` (`phone == null` → `pending`, else `active`/`deactivated`), not
-  stored. The old password-based `create` is gone (organizers log in by phone).
+  `toPublicOrganizer` (`acceptedAt == null` → `pending`, else `active`/`deactivated`
+  by the `active` flag), not stored — `acceptedAt` replaced the old "no phone yet ⇒
+  pending" heuristic now that the phone is set at invite time. The old
+  password-based `create` is gone (organizers log in by phone). **Guard:** a
+  pending (not-yet-accepted) organizer **cannot** log in by phone — `authService.login`
+  rejects `role === 'organizer' && !acceptedAt`, so the pre-set phone alone never
+  bypasses the email accept.
 - **Invite onboarding** (`models/invite.model.ts`, `services/invite.services.ts`,
   `services/mailer.service.ts`, public `routes/invite.routes.ts`). The `Invite` model
   mirrors `session.model.ts` (sha256 of the token, TTL index, single-use). Public,
   token-gated (no `requireAuth`): `GET /invite/:token` → `{name, email}` for the
-  accept screen; `POST /invite/:token/accept` `{phone}` binds the phone, activates the
-  user, deletes the invite, and **starts a session** (sets `camply_sid`) — same shape
-  as login. Mailer uses nodemailer: real SMTP if `SMTP_*` env is set, else a dev
+  accept screen; `POST /invite/:token/accept` (no body — the phone was recorded at
+  invite time) sets `acceptedAt`, activates the user, deletes the invite, and
+  **starts a session** (sets `camply_sid`) — same shape as login. Mailer uses nodemailer: real SMTP if `SMTP_*` env is set, else a dev
   **Ethereal** test account (preview URL logged, no real delivery). `User` gained a
   sparse-unique `email` field.
 - **Participants authenticate by phone alone** (no secret yet). The `/login` and

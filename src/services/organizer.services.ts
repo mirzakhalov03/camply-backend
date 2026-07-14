@@ -5,6 +5,7 @@ import { HttpError } from '../middlewares/error.middleware'
 import { sessionService } from './session.services'
 import { inviteService } from './invite.services'
 import { mailer } from './mailer.service'
+import { canonicalizePhone } from '../utils/phone'
 import { env } from '../config/env'
 import type { CreateOrganizerInput } from '../validators/organizer.validators'
 
@@ -21,7 +22,7 @@ export type PublicOrganizer = {
 }
 
 function statusOf(user: HydratedDocument<User>): OrganizerStatus {
-  if (!user.phone) return 'pending' // invited, not yet accepted
+  if (!user.acceptedAt) return 'pending' // invited, not yet accepted
   return user.active ? 'active' : 'deactivated'
 }
 
@@ -51,12 +52,17 @@ export const organizerService = {
     const exists = await UserModel.exists({ email })
     if (exists) throw new HttpError(409, 'Email already registered')
 
+    const phone = canonicalizePhone(input.phone)
+    const phoneTaken = await UserModel.exists({ phone })
+    if (phoneTaken) throw new HttpError(409, 'Phone already registered')
+
     const user = await UserModel.create({
       email,
+      phone,
       name: input.name,
       surname: input.surname,
       role: 'organizer',
-      active: true, // active flag ≠ accepted; status is 'pending' until phone is set
+      active: true, // active flag ≠ accepted; status is 'pending' until acceptedAt is set
     })
 
     const rawToken = await inviteService.createInvite(user._id, email)
@@ -74,7 +80,7 @@ export const organizerService = {
   resendInvite: async (id: string): Promise<{ organizer: PublicOrganizer; inviteUrl?: string }> => {
     const user = await UserModel.findOne({ _id: id, role: 'organizer' })
     if (!user) throw new HttpError(404, 'Organizer not found')
-    if (user.phone) throw new HttpError(409, 'Organizer already active')
+    if (user.acceptedAt) throw new HttpError(409, 'Organizer already active')
     const email = user.email ?? ''
     const rawToken = await inviteService.createInvite(user._id, email)
     const inviteUrl = `${env.APP_URL}/invite/${rawToken}`
@@ -89,7 +95,7 @@ export const organizerService = {
   revokeInvite: async (id: string): Promise<void> => {
     const user = await UserModel.findOne({ _id: id, role: 'organizer' })
     if (!user) throw new HttpError(404, 'Organizer not found')
-    if (user.phone) throw new HttpError(409, 'Organizer already active — deactivate instead')
+    if (user.acceptedAt) throw new HttpError(409, 'Organizer already active — deactivate instead')
     await InviteModel.deleteMany({ userId: user._id })
     await UserModel.deleteOne({ _id: user._id })
   },

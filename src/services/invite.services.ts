@@ -3,7 +3,6 @@ import type { Types } from 'mongoose'
 import { InviteModel } from '../models/invite.model'
 import { UserModel } from '../models/user.model'
 import { HttpError } from '../middlewares/error.middleware'
-import { canonicalizePhone } from '../utils/phone'
 import { sessionService } from './session.services'
 import { toPublicUser, type PublicUser } from './auth.services'
 import { env } from '../config/env'
@@ -37,10 +36,9 @@ export const inviteService = {
     return { name: user.name ?? '', email: invite.email }
   },
 
-  /** Bind the phone, activate, delete the token, and start a session (log them in). */
+  /** Confirm the invite: mark accepted, activate, delete the token, start a session. */
   accept: async (
     rawToken: string,
-    phoneRaw: string,
     userAgent?: string,
   ): Promise<{ token: string; user: PublicUser }> => {
     const invite = await InviteModel.findOne({ tokenHash: hashToken(rawToken) })
@@ -49,11 +47,8 @@ export const inviteService = {
     const user = await UserModel.findById(invite.userId)
     if (!user || user.role !== 'organizer') throw new HttpError(404, 'Invalid invite')
 
-    const phone = canonicalizePhone(phoneRaw)
-    const taken = await UserModel.exists({ phone, _id: { $ne: user._id } })
-    if (taken) throw new HttpError(409, 'Phone already registered')
-
-    user.phone = phone
+    // Phone was set by the org at invite time; accepting just confirms + activates.
+    user.acceptedAt = new Date()
     user.active = true
     await user.save()
     await InviteModel.deleteMany({ userId: user._id })
