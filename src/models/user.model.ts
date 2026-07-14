@@ -21,6 +21,10 @@ const userSchema = new Schema(
     role: { type: String, enum: USER_ROLES, default: 'participant', required: true },
     // Deactivating an organizer sets this false; login + requireAuth reject it.
     active: { type: Boolean, default: true, required: true },
+    // Set when an invited organizer accepts the email link. Absent ⇒ still
+    // pending. Replaces the old "no phone yet ⇒ pending" heuristic now that the
+    // org sets the phone at invite time.
+    acceptedAt: { type: Date },
     // Participant profile fields (the frontend registration form sends these).
     cityId: { type: String, trim: true },
     age: { type: Number },
