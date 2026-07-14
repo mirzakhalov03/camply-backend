@@ -1,9 +1,13 @@
-import type { HydratedDocument } from 'mongoose'
+import { Types, type HydratedDocument } from 'mongoose'
 import { CampModel, type Camp } from '../models/camp.model'
 import { MembershipModel } from '../models/membership.model'
 import { GroupModel } from '../models/group.model'
 import { GroupPointsModel } from '../models/leaderboard.model'
 import { UserModel, type User } from '../models/user.model'
+import { groupService } from './group.services'
+import { rosterService } from './roster.services'
+import { membershipService } from './membership.services'
+import { canonicalizePhone } from '../utils/phone'
 import { HttpError } from '../middlewares/error.middleware'
 
 export type PublicCampStatus = 'draft' | 'upcoming' | 'active' | 'archived'
@@ -66,6 +70,11 @@ type CreateInput = {
   clientRequestId?: string
 }
 
+type CreateFullInput = CreateInput & {
+  groups?: { ref: string; name: string; color: string }[]
+  participants?: { phone: string; groupRef: string | null }[]
+}
+
 export const campService = {
   // Camps this user runs (organizer memberships) — or all org camps for an org caller.
   listForOrganizer: async (user: HydratedDocument<User>) => {
@@ -113,6 +122,57 @@ export const campService = {
       status: 'active',
     })
     return toOrganizerCamp(camp)
+  },
+
+  // One-shot batch create: dedupe → validate-first → write (reusing the per-entity
+  // services) → compensating purge on any post-write error. No DB transaction, so it
+  // stays portable across standalone/replica-set MongoDB.
+  createFull: async (input: CreateFullInput, creator: HydratedDocument<User>) => {
+    const { groups = [], participants = [], ...campInput } = input
+
+    // 1. Dedupe — a retry with the same key returns the existing camp, no writes.
+    if (campInput.clientRequestId) {
+      const existing = await CampModel.findOne({ clientRequestId: campInput.clientRequestId })
+      if (existing) return { camp: await toOrganizerCamp(existing), created: false }
+    }
+
+    // 2. Validate-first (read-only) — reject bad input before any write.
+    const phones = participants.map((p) => canonicalizePhone(p.phone))
+    const seen = new Set<string>()
+    for (const phone of phones) {
+      if (seen.has(phone)) throw new HttpError(409, `Duplicate participant phone: ${phone}`)
+      seen.add(phone)
+    }
+    await Promise.all(
+      [...seen].map(async (phone) => {
+        if ((await membershipService.countParticipantCamps(phone)) >= 2) {
+          throw new HttpError(409, `Phone ${phone} is already in 2 camps`)
+        }
+      }),
+    )
+
+    // 3. Write — reuse the services so all side-effects (creator membership,
+    //    GroupPoints seed, phone canonicalization) are preserved.
+    const created = await campService.create(campInput, creator)
+    const campId = new Types.ObjectId(created.id)
+    try {
+      const refToId = new Map<string, string>()
+      for (const g of groups) {
+        const gd = await groupService.create(campId, { name: g.name, color: g.color })
+        refToId.set(g.ref, gd.id)
+      }
+      for (const p of participants) {
+        const groupId = p.groupRef ? (refToId.get(p.groupRef) ?? null) : null
+        await rosterService.add(campId, p.phone, groupId)
+      }
+    } catch (err) {
+      // 4. Compensating cleanup, then surface the original error.
+      await campService.purge(campId)
+      throw err
+    }
+
+    const camp = await CampModel.findById(campId)
+    return { camp: await toOrganizerCamp(camp!), created: true }
   },
 
   update: async (camp: HydratedDocument<Camp>, patch: Partial<CreateInput>) => {
