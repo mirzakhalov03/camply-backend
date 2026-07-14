@@ -6,7 +6,7 @@ import {
   updateOrganizerSchema,
   organizerIdParam,
 } from '../validators/organizer.validators'
-import { createCampSchema, updateCampSchema, campIdParam } from '../validators/camp.validators'
+import { createCampObject, updateCampSchema, campIdParam } from '../validators/camp.validators'
 import {
   rosterIdParams,
   addRosterSchema,
@@ -75,7 +75,7 @@ const InviteActionResponse = z.object({
 })
 
 // ── Camp schemas ──────────────────────────────────────────────────────────
-const CreateCampInput = registry.register('CreateCampInput', createCampSchema)
+const CreateCampInput = registry.register('CreateCampInput', createCampObject)
 const UpdateCampInput = registry.register('UpdateCampInput', updateCampSchema)
 
 const OrganizerCampSchema = registry.register(
