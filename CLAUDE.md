@@ -118,6 +118,16 @@ mock → live with no UI change).
   `leaderboard` (`GroupPoints` + append-only `PointEvent`). `Camp.status` stores only
   `draft`/`published` — the public `upcoming`/`active`/`archived` is **derived from
   dates** in `toOrganizerCamp`, never stored.
+- **Batch camp create.** `POST /organizer/camps` accepts an optional `groups[]` +
+  `participants[]` (+ `status`, `clientRequestId`) alongside the camp fields;
+  `campService.createFull` **dedupes** on `clientRequestId` (unique-sparse on `Camp`),
+  **validates first** (canonical phones, no intra-payload dup phones, ≤2-camp limit,
+  group-ref resolution) before any write, then **reuses** `create` /
+  `groupService.create` / `rosterService.add` and **purges** (camp + groups +
+  GroupPoints + memberships) on any post-write error. No transaction — portable to
+  standalone/replica-set alike. Per-entity routes remain for incremental post-create
+  edits. `campService.remove` now delegates its cascade to `campService.purge`.
+  Dedupe hit returns **200** (existing camp); a fresh create returns **201**.
 - **Membership is the join foundation.** Keyed by `{campId, phone}` (unique). The
   organizer pre-provisions a participant by **phone** (`status: 'pending'`, no
   `userId`); on **login** `membershipService.bindPhone` attaches the row to the user
