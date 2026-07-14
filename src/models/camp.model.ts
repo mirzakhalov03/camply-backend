@@ -14,12 +14,16 @@ const campSchema = new Schema(
     languages: { type: [String], default: [] }, // subset of en/uz/ru
     coverImage: { type: String, default: null },
     status: { type: String, enum: CAMP_STORED_STATUS, default: 'draft', required: true },
+    clientRequestId: { type: String, default: null }, // idempotency key for batch create
     archivedAt: { type: Date, default: null }, // manual archive of a still-dated camp
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     organizationId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true },
 )
+
+// Retry-safe batch create: a repeat with the same key returns the existing camp.
+campSchema.index({ clientRequestId: 1 }, { unique: true, sparse: true })
 
 export type Camp = InferSchemaType<typeof campSchema> & { _id: Types.ObjectId }
 export const CampModel = model('Camp', campSchema)
