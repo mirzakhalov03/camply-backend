@@ -334,11 +334,15 @@ registry.registerPath({
   method: 'post',
   path: '/api/organizer/camps',
   tags: ['Camps'],
-  summary: 'Create a camp (status draft)',
+  summary: 'Create a camp, optionally with groups + participants (batch)',
   request: { body: { content: { 'application/json': { schema: CreateCampInput } } } },
   responses: {
     201: {
       description: 'Created camp',
+      content: { 'application/json': { schema: OrganizerCampSchema } },
+    },
+    200: {
+      description: 'Existing camp (clientRequestId dedupe hit)',
       content: { 'application/json': { schema: OrganizerCampSchema } },
     },
     401: { description: 'Not authenticated' },

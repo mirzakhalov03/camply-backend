@@ -11,8 +11,10 @@ export const getCamp: RequestHandler = async (req, res) => {
   res.json(await campService.getOne(req.camp!))
 }
 export const createCamp: RequestHandler = async (req, res) => {
-  // The service resolves organizationId (single-org launch) — the controller stays thin.
-  res.status(201).json(await campService.create(req.body, req.auth!.user))
+  // createFull handles the plain (no groups/participants) case too; `created` is
+  // false only on a clientRequestId dedupe hit, which returns 200 not 201.
+  const { camp, created } = await campService.createFull(req.body, req.auth!.user)
+  res.status(created ? 201 : 200).json(camp)
 }
 export const updateCamp: RequestHandler = async (req, res) => {
   res.json(await campService.update(req.camp!, req.body))
