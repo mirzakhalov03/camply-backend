@@ -2,6 +2,7 @@ import type { HydratedDocument } from 'mongoose'
 import { CampModel, type Camp } from '../models/camp.model'
 import { MembershipModel } from '../models/membership.model'
 import { GroupModel } from '../models/group.model'
+import { GroupPointsModel } from '../models/leaderboard.model'
 import { UserModel, type User } from '../models/user.model'
 import { HttpError } from '../middlewares/error.middleware'
 
@@ -61,6 +62,8 @@ type CreateInput = {
   capacity?: number
   languages?: string[]
   coverImage?: string | null
+  status?: 'draft' | 'published'
+  clientRequestId?: string
 }
 
 export const campService = {
@@ -94,7 +97,8 @@ export const campService = {
       ...input,
       startsAt: new Date(input.startsAt),
       endsAt: new Date(input.endsAt),
-      status: 'draft',
+      status: input.status ?? 'draft',
+      clientRequestId: input.clientRequestId ?? null,
       createdBy: creator._id,
       organizationId,
     })
@@ -132,10 +136,17 @@ export const campService = {
     return toOrganizerCamp(camp)
   },
 
+  // Full cascade — used by the batch-create rollback and by the guarded public remove.
+  purge: async (campId: Camp['_id']) => {
+    await MembershipModel.deleteMany({ campId })
+    await GroupPointsModel.deleteMany({ campId })
+    await GroupModel.deleteMany({ campId })
+    await CampModel.deleteOne({ _id: campId })
+  },
+
   remove: async (camp: Camp) => {
     if (camp.status !== 'draft') throw new HttpError(409, 'Only draft camps can be deleted')
-    await CampModel.deleteOne({ _id: camp._id })
-    await MembershipModel.deleteMany({ campId: camp._id })
+    await campService.purge(camp._id)
   },
 
   summary: async (user: HydratedDocument<User>) => {
