@@ -242,14 +242,15 @@ registry.registerPath({
   method: 'delete',
   path: '/api/organizers/{id}',
   tags: ['Organizers'],
-  summary: 'Revoke a pending invite — deletes the stub (organization only)',
+  summary:
+    'Delete an organizer — revokes a pending invite, or hard-deletes a deactivated one (organization only)',
   request: { params: organizerIdParam },
   responses: {
-    204: { description: 'Invite revoked' },
+    204: { description: 'Organizer deleted' },
     401: { description: 'Not authenticated' },
     403: { description: 'Insufficient permissions' },
     404: { description: 'Organizer not found' },
-    409: { description: 'Organizer already active — deactivate instead' },
+    409: { description: 'Organizer still active — deactivate before deleting' },
   },
 })
 
@@ -347,6 +348,10 @@ registry.registerPath({
     },
     401: { description: 'Not authenticated' },
     403: { description: 'Insufficient permissions' },
+    409: {
+      description:
+        'Limit reached — an organizer may create only one camp (participant already in 2 camps, or duplicate phone)',
+    },
   },
 })
 registry.registerPath({

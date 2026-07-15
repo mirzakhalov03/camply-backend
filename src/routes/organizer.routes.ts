@@ -11,7 +11,7 @@ import {
   createOrganizer,
   updateOrganizer,
   resendInvite,
-  revokeInvite,
+  removeOrganizer,
 } from '../controllers/organizer.controllers'
 
 // Every route is organization-only. Authorization enforced server-side.
@@ -27,6 +27,6 @@ router.patch(
   updateOrganizer,
 )
 router.post('/:id/resend', validate({ params: organizerIdParam }), resendInvite)
-router.delete('/:id', validate({ params: organizerIdParam }), revokeInvite)
+router.delete('/:id', validate({ params: organizerIdParam }), removeOrganizer)
 
 export default router

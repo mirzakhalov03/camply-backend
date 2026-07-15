@@ -1,6 +1,7 @@
 import type { HydratedDocument } from 'mongoose'
 import { UserModel, type User } from '../models/user.model'
 import { InviteModel } from '../models/invite.model'
+import { MembershipModel, ORGANIZER_SUB_ROLES } from '../models/membership.model'
 import { HttpError } from '../middlewares/error.middleware'
 import { sessionService } from './session.services'
 import { inviteService } from './invite.services'
@@ -91,12 +92,27 @@ export const organizerService = {
     }
   },
 
-  /** Revoke a PENDING invite: delete the stub user + token. Pending only. */
-  revokeInvite: async (id: string): Promise<void> => {
+  /**
+   * Delete an organizer — two-step safety for accepted ones. Handles two cases:
+   *  • pending (never accepted)              → cancel the invite (delete the stub).
+   *  • deactivated (accepted, active=false)  → hard delete.
+   * An accepted + still-active organizer is rejected (409): deactivate first, so a
+   * live account is never destroyed in one click. Camps they created are org-owned
+   * (organizationId) and left intact — only the organizer's own footprint is removed
+   * (invite tokens + their organizer-tier memberships + any sessions).
+   */
+  remove: async (id: string): Promise<void> => {
     const user = await UserModel.findOne({ _id: id, role: 'organizer' })
     if (!user) throw new HttpError(404, 'Organizer not found')
-    if (user.acceptedAt) throw new HttpError(409, 'Organizer already active — deactivate instead')
+    if (user.acceptedAt && user.active) {
+      throw new HttpError(409, 'Deactivate the organizer before deleting')
+    }
     await InviteModel.deleteMany({ userId: user._id })
+    await MembershipModel.deleteMany({
+      userId: user._id,
+      role: { $in: [...ORGANIZER_SUB_ROLES] },
+    })
+    await sessionService.revokeAllForUser(user._id)
     await UserModel.deleteOne({ _id: user._id })
   },
 

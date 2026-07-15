@@ -16,8 +16,8 @@ export const resendInvite: RequestHandler = async (req, res) => {
   res.json(result)
 }
 
-export const revokeInvite: RequestHandler = async (req, res) => {
-  await organizerService.revokeInvite(String(req.params.id))
+export const removeOrganizer: RequestHandler = async (req, res) => {
+  await organizerService.remove(String(req.params.id))
   res.status(204).end()
 }
 

@@ -128,6 +128,11 @@ mock → live with no UI change).
   standalone/replica-set alike. Per-entity routes remain for incremental post-create
   edits. `campService.remove` now delegates its cascade to `campService.purge`.
   Dedupe hit returns **200** (existing camp); a fresh create returns **201**.
+  **One camp per invited organizer:** `createFull` rejects a second create from a
+  `role === 'organizer'` caller who already has a camp (`createdBy` count, **409**) —
+  checked _after_ the dedupe so an idempotent retry of their first camp still returns
+  it. The **organization** super-admin is exempt (unlimited camps). The frontend also
+  hides the create button once they have a camp, but the server is the authority.
 - **Membership is the join foundation.** Keyed by `{campId, phone}` (unique). The
   organizer pre-provisions a participant by **phone** (`status: 'pending'`, no
   `userId`); on **login** `membershipService.bindPhone` attaches the row to the user

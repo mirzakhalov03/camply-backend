@@ -136,6 +136,16 @@ export const campService = {
       if (existing) return { camp: await toOrganizerCamp(existing), created: false }
     }
 
+    // 1b. One camp per invited organizer. An organizer is invited to set up a single
+    //     camp; once they've created one, the server refuses a second (the UI also
+    //     hides the button — but the server is the real authority). The organization
+    //     super-admin is exempt and creates any number. Checked AFTER the dedupe so an
+    //     idempotent retry of their first camp still returns it above, not a 409.
+    if (creator.role === 'organizer') {
+      const ownCamps = await CampModel.countDocuments({ createdBy: creator._id })
+      if (ownCamps > 0) throw new HttpError(409, 'You have already created a camp')
+    }
+
     // 2. Validate-first (read-only) — reject bad input before any write.
     const phones = participants.map((p) => canonicalizePhone(p.phone))
     const seen = new Set<string>()
