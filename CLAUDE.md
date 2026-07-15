@@ -46,12 +46,29 @@ Express 5 · Mongoose 9 (MongoDB) · Zod 4 · TypeScript (strict, CommonJS).
   **sha256** of the token is stored — never the raw value.
 - **Two middlewares, composed on every protected route** (`middlewares/auth.middleware.ts`):
   `requireAuth` (loads the session + user into `req.auth`) then `requireRole(min)`
-  (rank check: participant < organizer < organization). Example:
-  `router.post('/organizers', requireAuth, requireRole('organization'), ...)`.
+  (rank check: **participant(1) < organizer(2) < manager(3) < organization(4)**).
+  Example: `router.post('/managers', requireAuth, requireRole('organization'), ...)`.
 - **Role guardrail:** `POST /auth/register` **always** creates a `participant` —
   the client-sent `role` is ignored. Organizations exist only via `npm run seed:org`;
-  organizers only via the org-only `POST /organizers`. A hidden button is never a
-  permission — the server is the sole authority.
+  **managers only via the org-only `POST /managers`** (a manager can't mint a peer
+  manager — the route is `requireRole('organization')`); **organizers via the
+  manager-or-above `POST /organizers`** (org + managers invite organizers). A hidden
+  button is never a permission — the server is the sole authority.
+- **Managers own camps.** `POST /organizer/camps` carries a route-specific
+  `requireRole('manager')` (the router itself stays `requireRole('organizer')` so
+  organizers keep read/operate access). `campService.createFull` enforces **one camp
+  per manager** (`role === 'manager'` + `createdBy` count → **409**, after the
+  `clientRequestId` dedupe); the org is exempt. Organizers can't create camps.
+  `campScope.requireCampManager` treats the **manager account role** and a `manager`
+  membership as manager-tier alongside organizer-tier memberships/org/creator, so
+  organizers still get full camp-ops writes (captured, not gated).
+- **Managers/organizers share one onboarding engine.** Both invite domains
+  (`services/organizer.services.ts`, `services/managers.services.ts`) are thin
+  instances of `makeOnboardingService(...)` in **`services/onboarding.factory.ts`**
+  (invite token + email + status derivation + deactivation; differ only in the
+  account `role` stamped/queried and which memberships purge on delete). The
+  `/managers` domain (routes/controllers/validators) mirrors `/organizers` and is
+  **org-only**. Register both in `docs/openapi.ts`.
 - **Login identity:** participants/organizers log in by **phone**; the organization
   logs in by **username** (`User.username`, sparse-unique, lowercased — the org has
   no phone, which is now optional on the model). `loginSchema` is a union of the two
@@ -73,9 +90,9 @@ email, phone}`, records the (canonicalized, unique-checked) phone, creates a
   by the `active` flag), not stored — `acceptedAt` replaced the old "no phone yet ⇒
   pending" heuristic now that the phone is set at invite time. The old
   password-based `create` is gone (organizers log in by phone). **Guard:** a
-  pending (not-yet-accepted) organizer **cannot** log in by phone — `authService.login`
-  rejects `role === 'organizer' && !acceptedAt`, so the pre-set phone alone never
-  bypasses the email accept.
+  pending (not-yet-accepted) organizer **or manager** **cannot** log in by phone —
+  `authService.login` rejects `(role === 'organizer' || role === 'manager') &&
+  !acceptedAt`, so the pre-set phone alone never bypasses the email accept.
 - **Invite onboarding** (`models/invite.model.ts`, `services/invite.services.ts`,
   `services/mailer.service.ts`, public `routes/invite.routes.ts`). The `Invite` model
   mirrors `session.model.ts` (sha256 of the token, TTL index, single-use). Public,
@@ -128,18 +145,21 @@ mock → live with no UI change).
   standalone/replica-set alike. Per-entity routes remain for incremental post-create
   edits. `campService.remove` now delegates its cascade to `campService.purge`.
   Dedupe hit returns **200** (existing camp); a fresh create returns **201**.
-  **One camp per invited organizer:** `createFull` rejects a second create from a
-  `role === 'organizer'` caller who already has a camp (`createdBy` count, **409**) —
+  **One camp per manager:** `createFull` rejects a second create from a
+  `role === 'manager'` caller who already has a camp (`createdBy` count, **409**) —
   checked _after_ the dedupe so an idempotent retry of their first camp still returns
-  it. The **organization** super-admin is exempt (unlimited camps). The frontend also
-  hides the create button once they have a camp, but the server is the authority.
+  it. The **organization** super-admin is exempt (unlimited camps); organizers can't
+  create camps at all (route-level `requireRole('manager')`). The frontend also hides
+  the create button, but the server is the authority.
 - **Membership is the join foundation.** Keyed by `{campId, phone}` (unique). The
   organizer pre-provisions a participant by **phone** (`status: 'pending'`, no
   `userId`); on **login** `membershipService.bindPhone` attaches the row to the user
   and flips it `active` (additive + idempotent — the one touch-point in `auth.services`;
-  `/login`/`/me` shapes unchanged). The 7 **organizer sub-roles**
-  (`ORGANIZER_SUB_ROLES` on the membership model) all grant camp-management; granular
-  per-sub-role enforcement is post-launch (captured, not gated). ≤2 participant camps
+  `/login`/`/me` shapes unchanged). The 6 **organizer sub-roles**
+  (`ORGANIZER_SUB_ROLES` — `projectManager` was promoted to the `manager` account
+  role) all grant camp-management; `MEMBERSHIP_ROLES` also carries `manager` (the
+  camp creator's own row). Granular per-sub-role enforcement is post-launch
+  (captured, not gated). ≤2 participant camps
   per phone is enforced at roster add. **`rosterService.add` canonicalizes the phone**
   (`+998…`, same as login) before storing/counting — otherwise the pending membership
   would never match the canonical phone `authService.login`/`bindPhone` query with, and
