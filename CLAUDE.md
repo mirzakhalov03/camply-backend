@@ -100,7 +100,15 @@ email, phone}`, records the (canonicalized, unique-checked) phone, creates a
   accept screen; `POST /invite/:token/accept` (no body — the phone was recorded at
   invite time) sets `acceptedAt`, activates the user, deletes the invite, and
   **starts a session** (sets `camply_sid`) — same shape as login. Mailer uses nodemailer: real SMTP if `SMTP_*` env is set, else a dev
-  **Ethereal** test account (preview URL logged, no real delivery). `User` gained a
+  **Ethereal** test account (preview URL logged, no real delivery). The invite
+  email **markup** lives in `src/emails/organizerInvite.ts` (a pure
+  `renderOrganizerInvite({name, link}) → {subject, html, text, attachments}`;
+  `mailer.service` only sends). It's a branded, table-layout HTML template (Uzbek
+  only for now — trilingual is a tracked follow-up). The header banner
+  (`src/emails/assets/camply-header.png`) is embedded as a **CID inline
+  attachment** (`cid:camply-header`), so it ships inside every email and needs no
+  public URL/hosting — the `build` script copies the asset into `dist/`. Preview
+  it with `npx tsx src/scripts/previewInviteEmail.ts`. `User` gained a
   sparse-unique `email` field.
 - **Participants authenticate by phone alone** (no secret yet). The `/login` and
   `/register` handlers are shaped so an OTP verification step drops in later
