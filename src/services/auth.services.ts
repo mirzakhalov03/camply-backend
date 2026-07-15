@@ -14,7 +14,7 @@ export type PublicUser = {
   phone: string | null
   name: string
   surname: string
-  role: 'participant' | 'organizer' | 'organization'
+  role: 'participant' | 'organizer' | 'manager' | 'organization'
   cityId: string | null
   age: number | null
   photo: string | null

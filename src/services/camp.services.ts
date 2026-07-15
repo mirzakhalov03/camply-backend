@@ -111,14 +111,14 @@ export const campService = {
       createdBy: creator._id,
       organizationId,
     })
-    // Seed the creator's own organizer-tier membership so one lookup governs access.
+    // Seed the creator's own manager-tier membership so one lookup governs access.
     // Use the creator's real phone: the {campId, phone} unique index allows only one
     // empty-phone membership per camp, so '' would collide once a second manager joins.
     await MembershipModel.create({
       campId: camp._id,
       phone: creator.phone ?? `owner:${String(creator._id)}`,
       userId: creator._id,
-      role: 'projectManager',
+      role: 'manager',
       status: 'active',
     })
     return toOrganizerCamp(camp)

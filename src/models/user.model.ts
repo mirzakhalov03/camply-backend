@@ -3,7 +3,7 @@ import { ORGANIZER_SUB_ROLES } from './membership.model'
 
 // The role hierarchy (Context.md §3). Exported so validators, sessions, and the
 // authorization middleware share one source of truth.
-export const USER_ROLES = ['participant', 'organizer', 'organization'] as const
+export const USER_ROLES = ['participant', 'organizer', 'manager', 'organization'] as const
 
 const userSchema = new Schema(
   {

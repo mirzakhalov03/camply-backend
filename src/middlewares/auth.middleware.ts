@@ -7,7 +7,7 @@ import { SESSION_COOKIE_NAME } from '../config/cookies'
 type Role = (typeof USER_ROLES)[number]
 
 // Higher rank = more authority. requireRole(min) passes when rank >= RANK[min].
-const RANK: Record<Role, number> = { participant: 1, organizer: 2, organization: 3 }
+const RANK: Record<Role, number> = { participant: 1, organizer: 2, manager: 3, organization: 4 }
 
 // AUTHENTICATION — "who are you?". Reads the session cookie, loads the user,
 // attaches req.auth. Throws 401 on any failure. (Express 5 forwards async throws.)
