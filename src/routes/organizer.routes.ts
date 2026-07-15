@@ -14,10 +14,11 @@ import {
   removeOrganizer,
 } from '../controllers/organizer.controllers'
 
-// Every route is organization-only. Authorization enforced server-side.
+// Every route is manager-or-above (managers and the org invite organizers).
+// Authorization enforced server-side.
 const router = Router()
 
-router.use(requireAuth, requireRole('organization'))
+router.use(requireAuth, requireRole('manager'))
 
 router.get('/', listOrganizers)
 router.post('/', validate({ body: createOrganizerSchema }), createOrganizer)

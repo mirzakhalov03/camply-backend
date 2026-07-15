@@ -8,6 +8,7 @@
     "seed:org": "tsx src/scripts/seedOrg.ts",
     "seed:participants": "tsx src/scripts/seedParticipants.ts",
     "build": "tsc && mkdir -p dist/emails/assets && cp src/emails/assets/* dist/emails/assets/",
+    "promote:creators": "tsx src/scripts/promoteCampCreators.ts",
     "start": "node dist/server.js",
     "lint": "oxlint src",
     "format": "prettier --write \"src/**/*.ts\"",

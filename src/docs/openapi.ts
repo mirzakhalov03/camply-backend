@@ -6,6 +6,11 @@ import {
   updateOrganizerSchema,
   organizerIdParam,
 } from '../validators/organizer.validators'
+import {
+  createManagerSchema,
+  updateManagerSchema,
+  managerIdParam,
+} from '../validators/managers.validators'
 import { createCampObject, updateCampSchema, campIdParam } from '../validators/camp.validators'
 import {
   rosterIdParams,
@@ -38,7 +43,9 @@ const PublicUserSchema = registry.register(
     phone: z.string().nullable().openapi({ example: '+998901234567' }),
     name: z.string().openapi({ example: 'Ali' }),
     surname: z.string().openapi({ example: 'Valiyev' }),
-    role: z.enum(['participant', 'organizer', 'organization']).openapi({ example: 'participant' }),
+    role: z
+      .enum(['participant', 'organizer', 'manager', 'organization'])
+      .openapi({ example: 'participant' }),
     cityId: z.string().nullable().openapi({ example: 'Tashkent' }),
     age: z.number().nullable().openapi({ example: 16 }),
     photo: z.string().nullable().openapi({ example: null }),
@@ -71,6 +78,28 @@ const OrganizersListResponse = z.object({ organizers: z.array(PublicOrganizerSch
 // Create/resend also return the dev-only invite link so the org can test without an inbox.
 const InviteActionResponse = z.object({
   organizer: PublicOrganizerSchema,
+  inviteUrl: z.string().optional().openapi({ example: 'http://localhost:5173/invite/abc123' }),
+})
+
+// Managers mirror organizers (same public shape); only the response envelope key differs.
+const CreateManagerInput = registry.register('CreateManagerInput', createManagerSchema)
+const UpdateManagerInput = registry.register('UpdateManagerInput', updateManagerSchema)
+const PublicManagerSchema = registry.register(
+  'PublicManager',
+  z.object({
+    id: z.string().openapi({ example: '665f1b2c9d1e4a0012a3b4c5' }),
+    email: z.string().nullable().openapi({ example: 'aziz@example.com' }),
+    phone: z.string().nullable().openapi({ example: '+998901234567' }),
+    name: z.string().openapi({ example: 'Aziz' }),
+    surname: z.string().openapi({ example: 'Karimov' }),
+    status: z.enum(['pending', 'active', 'deactivated']).openapi({ example: 'pending' }),
+    createdAt: z.string().openapi({ example: '2026-07-12T10:00:00.000Z' }),
+  }),
+)
+const ManagerResponse = z.object({ manager: PublicManagerSchema })
+const ManagersListResponse = z.object({ managers: z.array(PublicManagerSchema) })
+const ManagerInviteActionResponse = z.object({
+  manager: PublicManagerSchema,
   inviteUrl: z.string().optional().openapi({ example: 'http://localhost:5173/invite/abc123' }),
 })
 
@@ -271,6 +300,93 @@ registry.registerPath({
     401: { description: 'Not authenticated' },
     403: { description: 'Insufficient permissions' },
     404: { description: 'Organizer not found' },
+  },
+})
+
+// ── Managers (organization only — a manager cannot mint a peer manager) ──────
+registry.registerPath({
+  method: 'get',
+  path: '/api/managers',
+  tags: ['Managers'],
+  summary: 'List all managers (organization only)',
+  responses: {
+    200: {
+      description: 'Managers, newest first',
+      content: { 'application/json': { schema: ManagersListResponse } },
+    },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/managers',
+  tags: ['Managers'],
+  summary: 'Invite a manager by name, email + phone (organization only)',
+  request: { body: { content: { 'application/json': { schema: CreateManagerInput } } } },
+  responses: {
+    201: {
+      description: 'Pending manager created; invite emailed (inviteUrl returned in dev)',
+      content: { 'application/json': { schema: ManagerInviteActionResponse } },
+    },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+    409: { description: 'Email already registered' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/managers/{id}/resend',
+  tags: ['Managers'],
+  summary: 'Resend a pending manager invite (organization only)',
+  request: { params: managerIdParam },
+  responses: {
+    200: {
+      description: 'Invite re-issued and emailed (inviteUrl returned in dev)',
+      content: { 'application/json': { schema: ManagerInviteActionResponse } },
+    },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+    404: { description: 'Manager not found' },
+    409: { description: 'Manager already active' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/managers/{id}',
+  tags: ['Managers'],
+  summary:
+    'Delete a manager — revokes a pending invite, or hard-deletes a deactivated one (organization only)',
+  request: { params: managerIdParam },
+  responses: {
+    204: { description: 'Manager deleted' },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+    404: { description: 'Manager not found' },
+    409: { description: 'Manager still active — deactivate before deleting' },
+  },
+})
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/managers/{id}',
+  tags: ['Managers'],
+  summary: 'Activate or deactivate a manager (organization only)',
+  request: {
+    params: managerIdParam,
+    body: { content: { 'application/json': { schema: UpdateManagerInput } } },
+  },
+  responses: {
+    200: {
+      description: 'Updated manager',
+      content: { 'application/json': { schema: ManagerResponse } },
+    },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+    404: { description: 'Manager not found' },
   },
 })
 

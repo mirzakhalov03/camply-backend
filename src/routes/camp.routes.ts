@@ -17,7 +17,12 @@ organizerCampRouter.use('/camps/:id/roster', rosterRouter)
 organizerCampRouter.use('/camps/:id/groups', groupRouter)
 organizerCampRouter.get('/camps', c.listCamps)
 organizerCampRouter.get('/summary', c.getCampSummary)
-organizerCampRouter.post('/camps', validate({ body: createCampSchema }), c.createCamp)
+organizerCampRouter.post(
+  '/camps',
+  requireRole('manager'),
+  validate({ body: createCampSchema }),
+  c.createCamp,
+)
 organizerCampRouter.get(
   '/camps/:id',
   validate({ params: campIdParam }),
