@@ -136,12 +136,12 @@ export const campService = {
       if (existing) return { camp: await toOrganizerCamp(existing), created: false }
     }
 
-    // 1b. One camp per invited organizer. An organizer is invited to set up a single
-    //     camp; once they've created one, the server refuses a second (the UI also
-    //     hides the button — but the server is the real authority). The organization
-    //     super-admin is exempt and creates any number. Checked AFTER the dedupe so an
-    //     idempotent retry of their first camp still returns it above, not a 409.
-    if (creator.role === 'organizer') {
+    // 1b. One camp per manager. A manager is invited to set up and run a single camp;
+    //     once they've created one, the server refuses a second (the UI also hides the
+    //     button — but the server is the real authority). The organization super-admin
+    //     is exempt and creates any number. Checked AFTER the dedupe so an idempotent
+    //     retry of their first camp still returns it above, not a 409.
+    if (creator.role === 'manager') {
       const ownCamps = await CampModel.countDocuments({ createdBy: creator._id })
       if (ownCamps > 0) throw new HttpError(409, 'You have already created a camp')
     }
