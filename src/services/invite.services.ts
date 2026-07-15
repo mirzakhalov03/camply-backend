@@ -45,7 +45,10 @@ export const inviteService = {
     if (!invite) throw new HttpError(404, 'Invalid invite')
     if (invite.expiresAt.getTime() <= Date.now()) throw new HttpError(410, 'Invite expired')
     const user = await UserModel.findById(invite.userId)
-    if (!user || user.role !== 'organizer') throw new HttpError(404, 'Invalid invite')
+    // Both organizers and managers onboard through this magic-link accept flow.
+    if (!user || (user.role !== 'organizer' && user.role !== 'manager')) {
+      throw new HttpError(404, 'Invalid invite')
+    }
 
     // Phone was set by the org at invite time; accepting just confirms + activates.
     user.acceptedAt = new Date()
