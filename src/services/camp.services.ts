@@ -51,6 +51,8 @@ export async function toOrganizerCamp(camp: Camp) {
     name: camp.name,
     location: camp.location,
     dateRange: `${fmt(camp.startsAt)} – ${fmt(camp.endsAt)}`,
+    startsAt: camp.startsAt.toISOString(),
+    endsAt: camp.endsAt.toISOString(),
     status: deriveStatus(camp),
     coverImage: camp.coverImage ?? null,
     ...counts,
