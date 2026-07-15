@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import authRoutes from './auth.routes'
 import organizerRoutes from './organizer.routes'
+import managerRoutes from './managers.routes'
 import inviteRoutes from './invite.routes'
 import { organizerCampRouter, campRouter } from './camp.routes'
 import teamRoutes from './team.routes'
@@ -13,6 +14,7 @@ router.get('/health', (_req, res) => {
 
 router.use('/auth', authRoutes)
 router.use('/organizers', organizerRoutes)
+router.use('/managers', managerRoutes)
 router.use('/invite', inviteRoutes)
 // Mount the specific /organizer/team before the broader /organizer camp router so
 // it's handled directly (no redundant pass through the camp router's middleware).

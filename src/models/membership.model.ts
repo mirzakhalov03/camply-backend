@@ -1,10 +1,10 @@
 import { Schema, model, Types, type InferSchemaType } from 'mongoose'
 
-// The 7 canonical organizer sub-roles (frontend components/organizer/roles.ts).
+// The canonical organizer sub-roles (frontend components/organizer/roles.ts).
 // Any of these is "organizer-tier" and grants camp management. Granular per-role
 // permission enforcement is post-launch (CONTEXT §7) — captured, not gated.
+// `projectManager` was promoted to the first-class `manager` account role (2026-07-15).
 export const ORGANIZER_SUB_ROLES = [
-  'projectManager',
   'coordinator',
   'admin',
   'media',
@@ -13,7 +13,8 @@ export const ORGANIZER_SUB_ROLES = [
   'photographer',
 ] as const
 
-export const MEMBERSHIP_ROLES = ['participant', ...ORGANIZER_SUB_ROLES] as const
+// A manager's own per-camp row is labelled 'manager'; organizers carry a sub-role.
+export const MEMBERSHIP_ROLES = ['participant', 'manager', ...ORGANIZER_SUB_ROLES] as const
 export const CHECKIN_STATUS = ['in', 'out'] as const
 export const MEMBERSHIP_STATUS = ['pending', 'active'] as const
 
