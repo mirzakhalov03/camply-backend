@@ -1,5 +1,6 @@
 import nodemailer, { type Transporter } from 'nodemailer'
 import { env } from '../config/env'
+import { renderOrganizerInvite } from '../emails/organizerInvite'
 
 /*
   The one mailer. Real SMTP transport when SMTP_HOST is configured; otherwise a
@@ -43,21 +44,14 @@ export const mailer = {
     link: string
   }): Promise<{ previewUrl?: string }> => {
     const transport = await getTransport()
+    const { subject, html, text, attachments } = renderOrganizerInvite({ name, link })
     const info = await transport.sendMail({
       from: env.MAIL_FROM,
       to,
-      subject: 'Camply — tashkilotchi taklifnomasi',
-      text:
-        `Salom ${name},\n\n` +
-        `Siz Camply'ga tashkilotchi sifatida taklif qilindingiz. Kirish uchun ` +
-        `quyidagi havolani oching va telefon raqamingizni kiriting:\n\n${link}\n\n` +
-        `Havola 7 kun amal qiladi.`,
-      html:
-        `<p>Salom ${name},</p>` +
-        `<p>Siz Camply'ga tashkilotchi sifatida taklif qilindingiz. Kirish uchun ` +
-        `quyidagi havolani bosing va telefon raqamingizni kiriting:</p>` +
-        `<p><a href="${link}">${link}</a></p>` +
-        `<p>Havola 7 kun amal qiladi.</p>`,
+      subject,
+      text,
+      html,
+      attachments,
     })
     const previewUrl = nodemailer.getTestMessageUrl(info) || undefined
     if (previewUrl) console.log('✉️  Invite email preview:', previewUrl)
