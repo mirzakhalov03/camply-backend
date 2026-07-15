@@ -69,10 +69,10 @@ export const authService = {
     // Deactivated accounts (e.g. a revoked organizer) cannot sign in.
     if (!user.active) throw new HttpError(401, 'Invalid credentials')
 
-    // An invited organizer must accept the email link first. Their phone is set at
-    // invite time, but the pre-set phone alone must not grant entry — email is the
-    // way in. Once acceptedAt is set, normal phone login works.
-    if (user.role === 'organizer' && !user.acceptedAt) {
+    // An invited organizer OR manager must accept the email link first. Their phone is
+    // set at invite time, but the pre-set phone alone must not grant entry — email is
+    // the way in. Once acceptedAt is set, normal phone login works.
+    if ((user.role === 'organizer' || user.role === 'manager') && !user.acceptedAt) {
       throw new HttpError(401, 'Invalid credentials')
     }
 
