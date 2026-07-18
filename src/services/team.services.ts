@@ -43,6 +43,9 @@ export const teamService = {
         return {
           id: String(m._id),
           name,
+          // The manager's own team roster — they need a way to actually reach these
+          // people. Mirrors the `pending` rows below, which already carry the phone.
+          phone: m.phone,
           initials: initialsOf(name),
           avatarColor: colorFor(String(m.userId)),
           photo: u?.photo ?? null,
@@ -76,6 +79,19 @@ export const teamService = {
 
     const existing = await MembershipModel.findOne({ campId: camp._id, phone })
     if (existing) throw new HttpError(409, 'This phone is already on the team')
+
+    /*
+      A manager runs exactly ONE camp — and that has to be enforced on ASSIGNMENT,
+      not just creation. campService.createFull caps managers by counting camps
+      they created, which stops a second `POST /organizer/camps` but says nothing
+      about being invited elsewhere. And requireCampManager grants manager-tier
+      rights on the strength of the ACCOUNT role alone, so a manager who joined
+      another camp's team would silently hold full control of a camp they don't own.
+    */
+    const invitee = await UserModel.findOne({ phone }).select('role')
+    if (invitee?.role === 'manager') {
+      throw new HttpError(409, 'Managers run their own camp and cannot join another camp’s team')
+    }
 
     const m = await MembershipModel.create({
       campId: camp._id,

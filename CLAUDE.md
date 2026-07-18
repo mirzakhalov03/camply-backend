@@ -12,6 +12,13 @@ touching auth or permissions.** This file covers the backend stack and conventio
 - `npm run typecheck` — `tsc --noEmit`, the primary per-change gate.
 - `npm run lint` — **oxlint** (not ESLint). `npm run format` / `format:check` — Prettier.
 - `npm run validate` — lint + format:check + typecheck (the pre-commit hook).
+- `npm run seed:demo` — dev-only: **wipes all camp data** (camps, groups,
+  memberships, activities, announcements, leaderboards — user accounts are kept)
+  and rebuilds one published camp with 1 manager, 10 organizers, 100 participants
+  in 10 groups. Everyone gets a real `User` (not a bare membership row): the roster
+  and team projections read names off the **bound** user, and `userId: null` reads
+  as a *pending invite*. Uses reserved phone ranges (`+99894000…`) so re-runs are
+  idempotent without touching hand-made accounts.
 - `npm run seed:org` — dev-only: provisions the first `organization` from
   `SEED_ORG_USERNAME` / `SEED_ORG_PASSWORD` (dev defaults `admin` / `1234`). The
   org is keyed by **username** and has no phone.
@@ -131,6 +138,33 @@ email, phone}`, records the (canonicalized, unique-checked) phone, creates a
 
 Design + plan: `docs/superpowers/specs/2026-07-11-auth-authorization-design.md`,
 `docs/superpowers/plans/2026-07-11-auth-authorization.md`.
+
+## Participant camp resolution (`/me/camps`, `/camps/:id/my-group`)
+
+How a logged-in participant finds their camp. Before this, the client sent a
+literal `'current'` as the campId, which the 24-hex `campIdParam` rejected — every
+participant camp request 400'd.
+
+- **`GET /me/camps`** (`routes/me.routes.ts`, `requireAuth` only — self-scoped, no
+  role gate). `campService.listForParticipant` queries memberships by **`userId`,
+  not phone**: `requireCampMember` resolves with `{campId, userId}`, so a phone
+  match could list a camp whose unbound row then 403s on every call. Excludes
+  **draft** (not ready) and **archived** (finished ⇒ "no camp", not stale content).
+  Ordered by **relevance** — active, then soonest upcoming — because the client
+  opens `camps[0]`, and a plain `startsAt` sort puts the *oldest* camp first.
+- **`toParticipantCamp`** is deliberately **not** `toOrganizerCamp`: that one
+  spreads `...campCounts`, leaking `participantCount`/`checkinPct` to participants.
+- **`GET /camps/:id/my-group`** (on the shared `campRouter`, member-level). Uses
+  `toMyGroup`, **not** `toCampGroupDetail` — the latter returns full names and
+  falls back to `m.phone` as a display name, which is correct for the organizer's
+  roster and a privacy leak in a card the whole group sees. Returns initials + a
+  color only. `{ group: null }` with **200** when unassigned (a valid state).
+- **Color conventions differ on purpose:** `members[].color` is a palette *token*
+  (client resolves to `var(--color-*)` so dark mode works); `group.color` is
+  whatever the organizer picked, which in existing data is raw **hex** despite
+  `group.model.ts` calling it a token.
+
+Design + plan: `docs/superpowers/{specs,plans}/2026-07-18-participant-live-camp-data*.md`.
 
 ## Organizer CRUD domains (camp, group, roster, schedule, announcement, leaderboard, team)
 

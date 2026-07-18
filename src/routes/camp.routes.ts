@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../middlewares/auth.middleware'
 import { requireCampMember, requireCampManager } from '../middlewares/campScope.middleware'
 import { campIdParam, createCampSchema, updateCampSchema } from '../validators/camp.validators'
 import * as c from '../controllers/camp.controllers'
+import { getMyGroup } from '../controllers/group.controllers'
 import rosterRouter from './roster.routes'
 import groupRouter from './group.routes'
 import scheduleRouter from './schedule.routes'
@@ -62,6 +63,15 @@ organizerCampRouter.delete(
 // Shared read projection (participants included).
 export const campRouter = Router()
 campRouter.get('/:id', requireAuth, validate({ params: campIdParam }), requireCampMember, c.getCamp)
+// The caller's own group — a member-level read, unlike the manager-gated
+// /organizer/camps/:id/groups roster projection.
+campRouter.get(
+  '/:id/my-group',
+  requireAuth,
+  validate({ params: campIdParam }),
+  requireCampMember,
+  getMyGroup,
+)
 campRouter.use('/:id/schedule', scheduleRouter)
 campRouter.use('/:id/announcements', announcementRouter)
 campRouter.use('/:id/leaderboard', leaderboardRouter)

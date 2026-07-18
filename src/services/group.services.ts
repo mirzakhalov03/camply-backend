@@ -33,6 +33,52 @@ export async function toCampGroupDetail(group: Group) {
   }
 }
 
+/*
+  The PARTICIPANT's view of their OWN group.
+
+  Deliberately NOT toCampGroupDetail: that projection returns each member's full
+  name and membership id, and falls back to m.phone as the display name when a
+  member has no bound user. Correct for the organizer's roster; a privacy leak in
+  a card every group member can see. Here: initials and a palette token, nothing else.
+
+  Two different color conventions ship here, deliberately:
+    - members[].color is a palette TOKEN ('pine' | 'amber' | 'sky' | 'deep') from
+      colorFor(), which the client resolves to var(--color-<token>) so the avatar
+      tiles follow dark mode.
+    - group.color is whatever the organizer picked, which in existing data is a
+      raw HEX string despite group.model.ts calling it a token.
+  The client's paletteColor() therefore passes non-token values through unchanged
+  rather than forcing them into the palette.
+*/
+export async function toMyGroup(group: Group) {
+  const memberships = await MembershipModel.find({
+    groupId: group._id,
+    role: 'participant',
+  }).select('_id userId')
+
+  const members = await Promise.all(
+    memberships.map(async (m) => {
+      const user = m.userId ? await UserModel.findById(m.userId).select('name surname') : null
+      // name/surname stay optional until completeProfile, so a claimed participant
+      // can be nameless. Never fall back to the phone — this list is group-visible.
+      const label = user ? `${user.name ?? ''} ${user.surname ?? ''}`.trim() : ''
+      return {
+        initials: label ? initialsOf(label) : '?',
+        color: colorFor(String(m._id)),
+      }
+    }),
+  )
+
+  return {
+    id: String(group._id),
+    name: group.name,
+    color: group.color,
+    photo: group.photo ?? null,
+    memberCount: members.length,
+    members,
+  }
+}
+
 export const groupService = {
   list: async (campId: Types.ObjectId) => {
     const groups = await GroupModel.find({ campId }).sort({ createdAt: 1 })

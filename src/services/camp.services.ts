@@ -60,6 +60,26 @@ export async function toOrganizerCamp(camp: Camp) {
   }
 }
 
+/*
+  The PARTICIPANT projection of a camp. Deliberately NOT toOrganizerCamp: that one
+  spreads ...campCounts (participantCount, organizerCount, groupCount, checkinPct),
+  none of which a participant may see. Synchronous, because without the counts
+  there is nothing left to query.
+*/
+export function toParticipantCamp(camp: Camp) {
+  return {
+    id: String(camp._id),
+    name: camp.name,
+    location: camp.location,
+    dateRange: `${fmt(camp.startsAt)} – ${fmt(camp.endsAt)}`,
+    startsAt: camp.startsAt.toISOString(),
+    endsAt: camp.endsAt.toISOString(),
+    status: deriveStatus(camp),
+    coverImage: camp.coverImage ?? null,
+    ...dayProgress(camp),
+  }
+}
+
 type CreateInput = {
   name: string
   location: string
@@ -91,6 +111,42 @@ export const campService = {
       camps = await CampModel.find({ _id: { $in: ids } }).sort({ createdAt: -1 })
     }
     return Promise.all(camps.map(toOrganizerCamp))
+  },
+
+  /*
+    Every PUBLISHED, not-yet-finished camp this user PARTICIPATES in, most
+    relevant first (the client opens camps[0]).
+
+    Query by userId, NOT phone: requireCampMember resolves membership with
+    { campId, userId }, so matching on phone here could list a camp whose unbound
+    row (userId: null) then 403s on every camp-scoped call — a camp visible in the
+    UI that nothing can load. membershipService.bindPhone sets userId at login.
+
+    Draft camps are excluded: draft means "not ready", and managers stage rosters
+    before publishing. ARCHIVED camps are excluded too — a finished camp resolves
+    to "no camp", not to stale content. The client opens camps[0], so a participant
+    whose old camp merely sorted first would otherwise land on a dead schedule
+    instead of the camp they're about to attend.
+
+    Ordering is by RELEVANCE, not date: the camp running right now, then the
+    soonest upcoming one. Sorting by startsAt alone puts the OLDEST camp first,
+    which is the opposite of what camps[0] should mean.
+  */
+  listForParticipant: async (user: HydratedDocument<User>) => {
+    const ids = await MembershipModel.find({
+      userId: user._id,
+      role: 'participant',
+      status: 'active',
+    }).distinct('campId')
+    if (ids.length === 0) return []
+    const camps = await CampModel.find({ _id: { $in: ids }, status: 'published' })
+    const RANK: Record<string, number> = { active: 0, upcoming: 1 }
+    return camps
+      .map(toParticipantCamp)
+      .filter((c) => c.status !== 'archived')
+      .sort(
+        (a, b) => RANK[a.status] - RANK[b.status] || +new Date(a.startsAt) - +new Date(b.startsAt),
+      )
   },
 
   getOne: async (camp: Camp) => toOrganizerCamp(camp), // camp resolved by middleware

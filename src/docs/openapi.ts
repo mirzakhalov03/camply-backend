@@ -124,6 +124,42 @@ const OrganizerCampSchema = registry.register(
     coverImage: z.string().nullable(),
   }),
 )
+// The participant's slice of a camp — same entity as OrganizerCamp, minus every
+// roster count. Participants get headline info, not back-office totals.
+const ParticipantCampSchema = registry.register(
+  'ParticipantCamp',
+  z.object({
+    id: z.string(),
+    name: z.string().openapi({ example: 'Summer Leadership Camp' }),
+    location: z.string().openapi({ example: 'Chimgan' }),
+    dateRange: z.string().openapi({ example: 'Jul 6 – Jul 19' }),
+    startsAt: z.string(),
+    endsAt: z.string(),
+    status: z.enum(['active', 'upcoming', 'archived']),
+    coverImage: z.string().nullable(),
+    dayCurrent: z.number().openapi({ example: 6 }),
+    dayTotal: z.number().openapi({ example: 14 }),
+  }),
+)
+
+// A member of your own group: initials and a color, never a name or phone.
+const MyGroupSchema = registry.register(
+  'MyGroup',
+  z.object({
+    id: z.string(),
+    name: z.string().openapi({ example: 'Pine Wolves' }),
+    color: z.string().openapi({ example: '#0f6b4f' }),
+    photo: z.string().nullable(),
+    memberCount: z.number(),
+    members: z.array(
+      z.object({
+        initials: z.string().openapi({ example: 'JM' }),
+        color: z.string().openapi({ example: 'sky' }),
+      }),
+    ),
+  }),
+)
+
 const OrganizerSummarySchema = registry.register(
   'OrganizerSummary',
   z.object({
@@ -556,6 +592,42 @@ registry.registerPath({
     200: {
       description: 'Camp',
       content: { 'application/json': { schema: OrganizerCampSchema } },
+    },
+    403: { description: 'Not a member of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/me/camps',
+  tags: ['Me'],
+  summary: "The caller's own camps",
+  description:
+    'Self-scoped: requireAuth only, no role gate. Returns every published, not-yet-finished camp the caller participates in, most relevant first (running now, then soonest upcoming). Draft and archived camps are excluded. An empty array is a valid response and means the client should show its no-camp state.',
+  responses: {
+    200: {
+      description: 'Camps the caller participates in',
+      content: { 'application/json': { schema: z.array(ParticipantCampSchema) } },
+    },
+    401: { description: 'Not authenticated' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}/my-group',
+  tags: ['Camps'],
+  summary: "The caller's own group within a camp",
+  description:
+    "Member-level read. Returns only initials and a color per member — never another member's name or phone. `group` is null (with 200) when the caller has not been assigned to a group yet.",
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: "The caller's group, or null when unassigned",
+      content: {
+        'application/json': { schema: z.object({ group: MyGroupSchema.nullable() }) },
+      },
     },
     403: { description: 'Not a member of this camp' },
     404: { description: 'Camp not found' },
