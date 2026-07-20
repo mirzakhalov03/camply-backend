@@ -4,6 +4,10 @@ import { campService } from '../services/camp.services'
 export const listCamps: RequestHandler = async (req, res) => {
   res.json(await campService.listForOrganizer(req.auth!.user))
 }
+// The organization's org-wide camp list. Role-gated at the route (organization only).
+export const listAllCamps: RequestHandler = async (req, res) => {
+  res.json({ camps: await campService.listAllForOrganization(req.auth!.user) })
+}
 export const getCampSummary: RequestHandler = async (req, res) => {
   res.json(await campService.summary(req.auth!.user))
 }

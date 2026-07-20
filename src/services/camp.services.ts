@@ -95,7 +95,78 @@ type CreateFullInput = CreateInput & {
   participants?: { phone: string; groupRef: string | null }[]
 }
 
+/*
+  One camp as the ORGANIZATION admin lists it. Deliberately NOT toOrganizerCamp:
+  the org's list needs the owning manager's name (attribution across managers) and
+  doesn't need day-progress or the organizer/group counts.
+*/
+export type AdminCamp = {
+  id: string
+  name: string
+  organizerName: string
+  location: string
+  dateRange: string
+  status: PublicCampStatus
+  participantCount: number
+}
+
+// Active first — that's what an admin is looking for — then upcoming, draft, and
+// finished camps last.
+const ADMIN_STATUS_ORDER: Record<PublicCampStatus, number> = {
+  active: 0,
+  upcoming: 1,
+  draft: 2,
+  archived: 3,
+}
+
 export const campService = {
+  /*
+    Every camp in the caller's ORGANIZATION, across all its managers — the org
+    admin's projection.
+
+    Scoped by organizationId, not unscoped: listForOrganizer already scopes an org
+    caller the same way, and a genuinely global list would leak other organizations'
+    camps the moment a second org exists.
+
+    Counts come from ONE grouped query rather than campCounts()-per-camp: this list
+    spans every manager, so the per-camp aggregation that's fine for a single
+    dashboard would be N round trips here.
+  */
+  listAllForOrganization: async (user: HydratedDocument<User>): Promise<AdminCamp[]> => {
+    const camps = await CampModel.find({ organizationId: user._id }).sort({ startsAt: -1 })
+    if (camps.length === 0) return []
+
+    const [counts, owners] = await Promise.all([
+      MembershipModel.aggregate<{ _id: Types.ObjectId; n: number }>([
+        { $match: { campId: { $in: camps.map((c) => c._id) }, role: 'participant' } },
+        { $group: { _id: '$campId', n: { $sum: 1 } } },
+      ]),
+      UserModel.find({ _id: { $in: camps.map((c) => c.createdBy) } }).select('name surname'),
+    ])
+
+    const countByCamp = new Map(counts.map((c) => [String(c._id), c.n]))
+    const ownerById = new Map(
+      owners.map((u) => [String(u._id), `${u.name ?? ''} ${u.surname ?? ''}`.trim()]),
+    )
+
+    return (
+      camps
+        .map((camp) => ({
+          id: String(camp._id),
+          name: camp.name,
+          // A camp whose creator was deleted still lists, with no attribution.
+          organizerName: ownerById.get(String(camp.createdBy)) || '—',
+          location: camp.location,
+          dateRange: `${fmt(camp.startsAt)} – ${fmt(camp.endsAt)}`,
+          status: deriveStatus(camp),
+          participantCount: countByCamp.get(String(camp._id)) ?? 0,
+        }))
+        // Array.sort is stable, so the startsAt-desc order above is preserved
+        // WITHIN each status bucket.
+        .sort((a, b) => ADMIN_STATUS_ORDER[a.status] - ADMIN_STATUS_ORDER[b.status])
+    )
+  },
+
   // Camps this user runs (organizer memberships) — or all org camps for an org caller.
   listForOrganizer: async (user: HydratedDocument<User>) => {
     let camps: Camp[]

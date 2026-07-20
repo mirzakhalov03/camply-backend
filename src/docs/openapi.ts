@@ -122,6 +122,21 @@ const OrganizerCampSchema = registry.register(
     coverImage: z.string().nullable(),
   }),
 )
+// The organization's org-wide projection — carries the owning manager's name for
+// cross-manager attribution, and drops the per-camp dashboard counts it doesn't use.
+const AdminCampSchema = registry.register(
+  'AdminCamp',
+  z.object({
+    id: z.string(),
+    name: z.string().openapi({ example: 'Summer Leadership Camp' }),
+    organizerName: z.string().openapi({ example: 'Aziz Karimov' }),
+    location: z.string().openapi({ example: 'Chimgan' }),
+    dateRange: z.string().openapi({ example: 'Jul 6 – Jul 19' }),
+    status: z.enum(['active', 'upcoming', 'draft', 'archived']),
+    participantCount: z.number(),
+  }),
+)
+
 // The participant's slice of a camp — same entity as OrganizerCamp, minus every
 // roster count. Participants get headline info, not back-office totals.
 const ParticipantCampSchema = registry.register(
@@ -577,6 +592,19 @@ registry.registerPath({
     403: { description: 'Not a manager of this camp' },
     404: { description: 'Camp not found' },
     409: { description: 'Only draft camps can be deleted' },
+  },
+})
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps',
+  tags: ['Camps'],
+  summary: "Every camp in the caller's organization (organization only)",
+  responses: {
+    200: {
+      description: 'Org-wide camp list, active first',
+      content: { 'application/json': { schema: z.object({ camps: z.array(AdminCampSchema) }) } },
+    },
+    403: { description: 'Not an organization account' },
   },
 })
 registry.registerPath({

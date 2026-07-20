@@ -62,6 +62,12 @@ organizerCampRouter.delete(
 
 // Shared read projection (participants included).
 export const campRouter = Router()
+/*
+  Org-wide camp list — every camp in the caller's organization, across all its
+  managers. ORGANIZATION ONLY: a manager sees their own camps via /organizer/camps,
+  and this projection deliberately spans owners they have no authority over.
+*/
+campRouter.get('/', requireAuth, requireRole('organization'), c.listAllCamps)
 campRouter.get('/:id', requireAuth, validate({ params: campIdParam }), requireCampMember, c.getCamp)
 // The caller's own group — a member-level read, unlike the manager-gated
 // /organizer/camps/:id/groups roster projection.
