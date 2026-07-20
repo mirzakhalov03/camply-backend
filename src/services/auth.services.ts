@@ -13,6 +13,8 @@ export type PublicUser = {
   id: string
   // Null for the organization super-admin, which logs in by username, not phone.
   phone: string | null
+  // Set for organizers/managers (invited by email); participants sign up by phone.
+  email: string | null
   name: string
   surname: string
   role: 'participant' | 'organizer' | 'manager' | 'organization'
@@ -30,6 +32,7 @@ export function toPublicUser(user: HydratedDocument<User>): PublicUser {
   return {
     id: String(user._id),
     phone: user.phone ?? null,
+    email: user.email ?? null,
     name: user.name ?? '',
     surname: user.surname ?? '',
     role: user.role,

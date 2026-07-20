@@ -41,6 +41,7 @@ const PublicUserSchema = registry.register(
   z.object({
     id: z.string().openapi({ example: '665f1b2c9d1e4a0012a3b4c5' }),
     phone: z.string().nullable().openapi({ example: '+998901234567' }),
+    email: z.string().nullable().openapi({ example: 'ali@camply.uz' }),
     name: z.string().openapi({ example: 'Ali' }),
     surname: z.string().openapi({ example: 'Valiyev' }),
     role: z
