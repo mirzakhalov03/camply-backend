@@ -23,7 +23,6 @@ export async function toRosterParticipant(m: Membership) {
     groupName: group?.name ?? null,
     city: user?.cityId ?? '',
     age: user?.age ?? 0,
-    status: m.checkin, // 'in' | 'out'
     phone: m.phone,
   }
 }
@@ -65,16 +64,6 @@ export const rosterService = {
 
   update: async (mid: string, patch: { groupId?: string | null; role?: string }) => {
     const m = await MembershipModel.findByIdAndUpdate(mid, { $set: patch }, { new: true })
-    if (!m) throw new HttpError(404, 'Membership not found')
-    return toRosterParticipant(m)
-  },
-
-  setCheckin: async (mid: string, status: 'in' | 'out') => {
-    const m = await MembershipModel.findByIdAndUpdate(
-      mid,
-      { $set: { checkin: status } },
-      { new: true },
-    )
     if (!m) throw new HttpError(404, 'Membership not found')
     return toRosterParticipant(m)
   },

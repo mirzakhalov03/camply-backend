@@ -34,14 +34,12 @@ function dayProgress(camp: Camp, now = new Date()): { dayCurrent: number; dayTot
 // Counts a camp needs for the dashboard card. One aggregation per camp is fine at
 // launch scale; batch later if the list grows.
 async function campCounts(campId: Camp['_id']) {
-  const [participantCount, organizerCount, groupCount, checkedIn] = await Promise.all([
+  const [participantCount, organizerCount, groupCount] = await Promise.all([
     MembershipModel.countDocuments({ campId, role: 'participant' }),
     MembershipModel.countDocuments({ campId, role: { $ne: 'participant' } }),
     GroupModel.countDocuments({ campId }),
-    MembershipModel.countDocuments({ campId, role: 'participant', checkin: 'in' }),
   ])
-  const checkinPct = participantCount === 0 ? 0 : Math.round((checkedIn / participantCount) * 100)
-  return { participantCount, organizerCount, groupCount, checkinPct }
+  return { participantCount, organizerCount, groupCount }
 }
 
 export async function toOrganizerCamp(camp: Camp) {
@@ -62,7 +60,7 @@ export async function toOrganizerCamp(camp: Camp) {
 
 /*
   The PARTICIPANT projection of a camp. Deliberately NOT toOrganizerCamp: that one
-  spreads ...campCounts (participantCount, organizerCount, groupCount, checkinPct),
+  spreads ...campCounts (participantCount, organizerCount, groupCount),
   none of which a participant may see. Synchronous, because without the counts
   there is nothing left to query.
 */
@@ -287,7 +285,6 @@ export const campService = {
       activeCamps,
       totalGroups: camps.reduce((s, c) => s + c.groupCount, 0),
       unreadChat: 0, // realtime chat is out of scope — 0 until that lands
-      onSite: camps.reduce((s, c) => s + Math.round((c.checkinPct / 100) * c.participantCount), 0),
     }
   },
 }

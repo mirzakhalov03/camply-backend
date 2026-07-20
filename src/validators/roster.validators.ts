@@ -11,4 +11,3 @@ export const updateRosterSchema = z.object({
   groupId: objectId.nullable().optional(),
   role: z.string().optional(),
 })
-export const checkinSchema = z.object({ status: z.enum(['in', 'out']) })

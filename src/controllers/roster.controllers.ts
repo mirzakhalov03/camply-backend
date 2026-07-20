@@ -10,9 +10,6 @@ export const addRoster: RequestHandler = async (req, res) => {
 export const updateRoster: RequestHandler = async (req, res) => {
   res.json(await rosterService.update(String(req.params.mid), req.body))
 }
-export const setCheckin: RequestHandler = async (req, res) => {
-  res.json(await rosterService.setCheckin(String(req.params.mid), req.body.status))
-}
 export const removeRoster: RequestHandler = async (req, res) => {
   await rosterService.remove(String(req.params.mid))
   res.status(204).end()

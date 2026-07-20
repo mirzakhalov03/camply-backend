@@ -6,7 +6,6 @@ import {
   rosterIdParams,
   addRosterSchema,
   updateRosterSchema,
-  checkinSchema,
 } from '../validators/roster.validators'
 import { campIdParam } from '../validators/camp.validators'
 import * as c from '../controllers/roster.controllers'
@@ -20,11 +19,6 @@ router.patch(
   '/:mid',
   validate({ params: rosterIdParams, body: updateRosterSchema }),
   c.updateRoster,
-)
-router.patch(
-  '/:mid/checkin',
-  validate({ params: rosterIdParams, body: checkinSchema }),
-  c.setCheckin,
 )
 router.delete('/:mid', validate({ params: rosterIdParams }), c.removeRoster)
 

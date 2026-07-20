@@ -16,7 +16,6 @@ import {
   rosterIdParams,
   addRosterSchema,
   updateRosterSchema,
-  checkinSchema,
 } from '../validators/roster.validators'
 import { groupIdParams, createGroupSchema, updateGroupSchema } from '../validators/group.validators'
 import {
@@ -118,7 +117,6 @@ const OrganizerCampSchema = registry.register(
     participantCount: z.number(),
     groupCount: z.number(),
     organizerCount: z.number(),
-    checkinPct: z.number(),
     dayCurrent: z.number(),
     dayTotal: z.number(),
     coverImage: z.string().nullable(),
@@ -169,7 +167,6 @@ const OrganizerSummarySchema = registry.register(
     activeCamps: z.number(),
     totalGroups: z.number(),
     unreadChat: z.number(),
-    onSite: z.number(),
   }),
 )
 
@@ -647,13 +644,11 @@ const RosterParticipantSchema = registry.register(
     groupName: z.string().nullable(),
     city: z.string(),
     age: z.number(),
-    status: z.enum(['in', 'out']),
     phone: z.string(),
   }),
 )
 const AddRosterInput = registry.register('AddRosterInput', addRosterSchema)
 const UpdateRosterInput = registry.register('UpdateRosterInput', updateRosterSchema)
-const CheckinInput = registry.register('CheckinInput', checkinSchema)
 
 registry.registerPath({
   method: 'get',
@@ -696,23 +691,6 @@ registry.registerPath({
   request: {
     params: rosterIdParams,
     body: { content: { 'application/json': { schema: UpdateRosterInput } } },
-  },
-  responses: {
-    200: {
-      description: 'Updated row',
-      content: { 'application/json': { schema: RosterParticipantSchema } },
-    },
-    404: { description: 'Membership not found' },
-  },
-})
-registry.registerPath({
-  method: 'patch',
-  path: '/api/organizer/camps/{id}/roster/{mid}/checkin',
-  tags: ['Roster'],
-  summary: 'Toggle check-in in/out',
-  request: {
-    params: rosterIdParams,
-    body: { content: { 'application/json': { schema: CheckinInput } } },
   },
   responses: {
     200: {

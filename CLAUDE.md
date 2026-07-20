@@ -153,7 +153,7 @@ participant camp request 400'd.
   Ordered by **relevance** — active, then soonest upcoming — because the client
   opens `camps[0]`, and a plain `startsAt` sort puts the *oldest* camp first.
 - **`toParticipantCamp`** is deliberately **not** `toOrganizerCamp`: that one
-  spreads `...campCounts`, leaking `participantCount`/`checkinPct` to participants.
+  spreads `...campCounts`, leaking `participantCount`/`groupCount` to participants.
 - **`GET /camps/:id/my-group`** (on the shared `campRouter`, member-level). Uses
   `toMyGroup`, **not** `toCampGroupDetail` — the latter returns full names and
   falls back to `m.phone` as a display name, which is correct for the organizer's

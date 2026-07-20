@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "validate": "npm run lint && npm run format:check && npm run typecheck",
     "prepare": "husky",
-    "seed:demo": "tsx src/scripts/seedDemoCamp.ts"
+    "seed:demo": "tsx src/scripts/seedDemoCamp.ts",
+    "migrate:drop-checkin": "tsx src/scripts/dropCheckin.ts"
   },
   "keywords": [],
   "author": "",

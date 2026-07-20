@@ -189,7 +189,6 @@ async function seedDemoCamp() {
     userId: manager._id,
     role: 'manager',
     status: 'active',
-    checkin: 'in',
   })
 
   // ── 5. Groups (+ their leaderboard rows, so standings exist from day one) ──
@@ -232,7 +231,6 @@ async function seedDemoCamp() {
       userId: user._id,
       role: ORGANIZER_SUB_ROLES[i % ORGANIZER_SUB_ROLES.length],
       status: 'active',
-      checkin: 'in',
     })
   }
 
@@ -256,7 +254,6 @@ async function seedDemoCamp() {
       groupId: groups[i % groups.length]._id,
       role: 'participant',
       status: 'active',
-      checkin: i % 4 === 0 ? 'out' : 'in',
     })
   }
 
