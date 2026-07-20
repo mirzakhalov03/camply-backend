@@ -30,6 +30,7 @@ import {
   pinSchema,
 } from '../validators/announcement.validators'
 import { leaderboardParams, adjustPointsSchema } from '../validators/leaderboard.validators'
+import { presignSchema } from '../validators/upload.validators'
 import { inviteTeamSchema, teamInviteIdParam } from '../validators/team.validators'
 
 const registry = new OpenAPIRegistry()
@@ -101,6 +102,8 @@ const ManagerInviteActionResponse = z.object({
   manager: PublicManagerSchema,
   inviteUrl: z.string().optional().openapi({ example: 'http://localhost:5173/invite/abc123' }),
 })
+
+const PresignInputSchema = registry.register('PresignInput', presignSchema)
 
 // ── Camp schemas ──────────────────────────────────────────────────────────
 const CreateCampInput = registry.register('CreateCampInput', createCampObject)
@@ -592,6 +595,30 @@ registry.registerPath({
     403: { description: 'Not a manager of this camp' },
     404: { description: 'Camp not found' },
     409: { description: 'Only draft camps can be deleted' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/uploads/presign',
+  tags: ['Uploads'],
+  summary: 'Mint a presigned S3 PUT for an image (≤5 MB)',
+  request: { body: { content: { 'application/json': { schema: PresignInputSchema } } } },
+  responses: {
+    200: {
+      description: 'Presigned upload target. PUT the file to uploadUrl, then attach `key`.',
+      content: {
+        'application/json': {
+          schema: z.object({
+            uploadUrl: z.string(),
+            key: z.string().openapi({ example: 'avatar/665f…/9f3c…​.jpg' }),
+            publicUrl: z.string(),
+            expiresIn: z.number().openapi({ example: 60 }),
+          }),
+        },
+      },
+    },
+    400: { description: 'Over 5 MB, or an unsupported content type' },
+    503: { description: 'Storage is not configured' },
   },
 })
 registry.registerPath({

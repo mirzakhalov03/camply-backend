@@ -7,6 +7,7 @@ import { UserModel, type User } from '../models/user.model'
 import { groupService } from './group.services'
 import { rosterService } from './roster.services'
 import { membershipService } from './membership.services'
+import { assertOwnedKey } from './upload.services'
 import { canonicalizePhone } from '../utils/phone'
 import { HttpError } from '../middlewares/error.middleware'
 
@@ -224,6 +225,8 @@ export const campService = {
   // organization here (its _id is the camp's organizationId). When an org account
   // itself creates a camp, it IS the org. Thread a real org id when multi-org lands.
   create: async (input: CreateInput, creator: HydratedDocument<User>) => {
+    // coverImage is a client-supplied upload reference — confirm the creator owns it.
+    if (input.coverImage) assertOwnedKey(input.coverImage, String(creator._id))
     const organizationId =
       creator.role === 'organization'
         ? creator._id
@@ -312,7 +315,13 @@ export const campService = {
     return { camp: await toOrganizerCamp(camp!), created: true }
   },
 
-  update: async (camp: HydratedDocument<Camp>, patch: Partial<CreateInput>) => {
+  update: async (
+    camp: HydratedDocument<Camp>,
+    patch: Partial<CreateInput>,
+    actor: HydratedDocument<User>,
+  ) => {
+    // Same guard as create: a cover image swapped in on edit is equally client-supplied.
+    if (patch.coverImage) assertOwnedKey(patch.coverImage, String(actor._id))
     Object.assign(camp, patch, {
       ...(patch.startsAt ? { startsAt: new Date(patch.startsAt) } : {}),
       ...(patch.endsAt ? { endsAt: new Date(patch.endsAt) } : {}),

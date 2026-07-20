@@ -26,6 +26,16 @@ const envSchema = z.object({
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
+  // S3 image uploads. OPTIONAL so the app boots before credentials are provisioned —
+  // the presign route returns 503 instead. Validated as a GROUP below: a
+  // half-configured bucket is worse than an unconfigured one, because it fails at
+  // upload time instead of at boot.
+  AWS_REGION: z.string().optional(),
+  AWS_S3_BUCKET: z.string().optional(),
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  // CDN/base URL objects are served from. Without it, only the key is returned.
+  S3_PUBLIC_BASE_URL: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -33,6 +43,21 @@ const parsed = envSchema.safeParse(process.env)
 if (!parsed.success) {
   console.error('❌ Invalid environment variables:')
   console.error(z.treeifyError(parsed.error))
+  process.exit(1)
+}
+
+// All-or-nothing S3: partial credentials would boot fine and then fail on the first
+// upload, which is a much worse place to discover the misconfiguration.
+const S3_VARS = [
+  'AWS_REGION',
+  'AWS_S3_BUCKET',
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+] as const
+const s3Set = S3_VARS.filter((key) => parsed.data[key])
+if (s3Set.length > 0 && s3Set.length < S3_VARS.length) {
+  console.error('❌ Partial S3 configuration. Set all of:', S3_VARS.join(', '))
+  console.error('   Currently set:', s3Set.join(', ') || '(none)')
   process.exit(1)
 }
 

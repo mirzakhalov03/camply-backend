@@ -6,6 +6,7 @@ import { HttpError } from '../middlewares/error.middleware'
 import { canonicalizePhone } from '../utils/phone'
 import { sessionService } from './session.services'
 import { membershipService } from './membership.services'
+import { assertOwnedKey } from './upload.services'
 import type { LoginInput, CompleteProfileInput } from '../validators/auth.validators'
 
 export type PublicUser = {
@@ -100,7 +101,12 @@ export const authService = {
     user.surname = input.surname
     user.cityId = input.cityId
     user.age = input.age
-    if (input.photo !== undefined) user.photo = input.photo ?? null
+    if (input.photo !== undefined) {
+      // A photo key is client-supplied; confirm it came from THIS user's uploads
+      // before persisting it, or anyone could claim another user's object.
+      if (input.photo) assertOwnedKey(input.photo, String(user._id))
+      user.photo = input.photo ?? null
+    }
     // Sub-role is an organizer concept; ignore it for participants ("store, not enforce").
     if (user.role === 'organizer' && input.subRole) user.subRole = input.subRole
     await user.save()

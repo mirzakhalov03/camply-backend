@@ -21,7 +21,7 @@ export const createCamp: RequestHandler = async (req, res) => {
   res.status(created ? 201 : 200).json(camp)
 }
 export const updateCamp: RequestHandler = async (req, res) => {
-  res.json(await campService.update(req.camp!, req.body))
+  res.json(await campService.update(req.camp!, req.body, req.auth!.user))
 }
 export const publishCamp: RequestHandler = async (req, res) => {
   res.json(await campService.publish(req.camp!))
