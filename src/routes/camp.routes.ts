@@ -79,6 +79,13 @@ campRouter.get(
   requireCampMember,
   getMyGroup,
 )
+campRouter.get(
+  '/:id/my-role',
+  requireAuth,
+  validate({ params: campIdParam }),
+  requireCampMember,
+  c.getMyRole,
+)
 campRouter.use('/:id/schedule', scheduleRouter)
 campRouter.use('/:id/announcements', announcementRouter)
 campRouter.use('/:id/leaderboard', leaderboardRouter)

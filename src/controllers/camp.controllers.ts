@@ -8,6 +8,10 @@ export const listCamps: RequestHandler = async (req, res) => {
 export const listAllCamps: RequestHandler = async (req, res) => {
   res.json({ camps: await campService.listAllForOrganization(req.auth!.user) })
 }
+export const getMyRole: RequestHandler = (req, res) => {
+  const isOrg = req.auth!.user.role === 'organization'
+  res.json(campService.myRole(req.membership ?? null, isOrg))
+}
 export const getCampSummary: RequestHandler = async (req, res) => {
   res.json(await campService.summary(req.auth!.user))
 }

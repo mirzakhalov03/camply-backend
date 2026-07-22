@@ -1,6 +1,6 @@
 import { Types, type HydratedDocument } from 'mongoose'
 import { CampModel, type Camp } from '../models/camp.model'
-import { MembershipModel } from '../models/membership.model'
+import { MembershipModel, type Membership } from '../models/membership.model'
 import { GroupModel } from '../models/group.model'
 import { GroupPointsModel } from '../models/leaderboard.model'
 import { UserModel, type User } from '../models/user.model'
@@ -364,7 +364,18 @@ export const campService = {
       totalParticipants: camps.reduce((s, c) => s + c.participantCount, 0),
       activeCamps,
       totalGroups: camps.reduce((s, c) => s + c.groupCount, 0),
-      unreadChat: 0, // realtime chat is out of scope — 0 until that lands
+      unreadChat: 0, // realtime chat unread counts are a later add — 0 for now
+    }
+  },
+
+  // The caller's OWN role + group in this camp — the server-known fact that replaces
+  // the frontend's unpersisted useOrganizerStore.role for coordinator gating.
+  myRole: (membership: HydratedDocument<Membership> | null, isOrg: boolean) => {
+    if (isOrg) return { role: 'organization' as const, groupId: null }
+    if (!membership) return { role: null, groupId: null }
+    return {
+      role: membership.role,
+      groupId: membership.groupId ? String(membership.groupId) : null,
     }
   },
 }
