@@ -1,7 +1,12 @@
 import { Router } from 'express'
 import { validate } from '../middlewares/validate.middleware'
 import { requireAuth, requireRole } from '../middlewares/auth.middleware'
-import { inviteTeamSchema, teamInviteIdParam } from '../validators/team.validators'
+import {
+  inviteTeamSchema,
+  teamInviteIdParam,
+  membershipIdParam,
+  setCoordinatorGroupSchema,
+} from '../validators/team.validators'
 import * as c from '../controllers/team.controllers'
 
 /*
@@ -24,6 +29,12 @@ router.delete(
   requireRole('manager'),
   validate({ params: teamInviteIdParam }),
   c.cancelTeamInvite,
+)
+router.patch(
+  '/:membershipId/group',
+  requireRole('manager'),
+  validate({ params: membershipIdParam, body: setCoordinatorGroupSchema }),
+  c.setTeamMemberGroup,
 )
 
 export default router

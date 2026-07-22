@@ -22,6 +22,8 @@ const membershipSchema = new Schema(
     campId: { type: Schema.Types.ObjectId, ref: 'Camp', required: true },
     phone: { type: String, required: true, trim: true }, // E.164 — the join key
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null }, // bound on signup
+    // For a participant row: the group they belong to. For a coordinator row: the
+    // single group they chat with (structural, not a rule). null = unassigned in both.
     groupId: { type: Schema.Types.ObjectId, ref: 'Group', default: null },
     role: { type: String, enum: MEMBERSHIP_ROLES, default: 'participant', required: true },
     status: { type: String, enum: MEMBERSHIP_STATUS, default: 'pending', required: true },
