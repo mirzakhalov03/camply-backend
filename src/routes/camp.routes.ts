@@ -10,6 +10,7 @@ import groupRouter from './group.routes'
 import scheduleRouter from './schedule.routes'
 import announcementRouter from './announcement.routes'
 import leaderboardRouter from './leaderboard.routes'
+import chatRouter from './chat.routes'
 
 // Organizer management projection.
 export const organizerCampRouter = Router()
@@ -81,3 +82,4 @@ campRouter.get(
 campRouter.use('/:id/schedule', scheduleRouter)
 campRouter.use('/:id/announcements', announcementRouter)
 campRouter.use('/:id/leaderboard', leaderboardRouter)
+campRouter.use('/:id/chat', chatRouter)
