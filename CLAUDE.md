@@ -229,6 +229,46 @@ phone}` maps the Mongo `E11000` to a clean **409**, not a 500.
 Design + plan: `docs/superpowers/specs/2026-07-12-organizer-crud-endpoints-design.md`,
 `docs/superpowers/plans/2026-07-12-organizer-crud-endpoints.md`.
 
+## Realtime chat (`Message` model, `/camps/:id/chat`, `sockets/`)
+
+Persistent, live chat over **Socket.IO**. REST is history-load only; sending +
+receiving happen on the socket.
+
+- **`Message` model** (`models/message.model.ts`): `{ campId, channel:'group'|'organizers',
+  groupId, authorId, text }`. `groupId` is non-null iff `channel==='group'`. Text-only
+  (1–2000, trimmed) — no `kind`/attachments/reactions server-side. Index
+  `{campId, channel, groupId, createdAt}` (the "latest N for this room" shape).
+- **`chatService`** (`services/chat.services.ts`) is the single source of truth for
+  both REST + socket: `history` (latest 50, oldest→newest), `groupMembers`/
+  `organizerMembers` (bound-user projections, same `initialsOf`/`colorFor` pattern),
+  `postMessage`. Messages carry only `authorId`; the client resolves the author
+  against the `members[]` the history/bootstrap supplies.
+- **REST** on the shared `campRouter`: `GET /camps/:id/chat/group/messages`
+  (member-level; `groupId` from `req.membership`, **never** the URL — unassigned →
+  `200 {groupId:null, members:[], messages:[]}`) and
+  `GET /camps/:id/chat/organizers/messages` (`requireCampManager` — participant 403s).
+- **`GET /camps/:id/my-role`** (member-level) → `{role, groupId}` for the caller's own
+  membership — the server-known fact the frontend gates coordinator chat on (replaces
+  an unpersisted client value).
+- **Sockets** (`sockets/`): attached to the raw `http.Server` in `server.ts` (not the
+  Express app). Handshake auth (`sockets/auth.ts`) parses the `camply_sid` cookie and
+  runs the **identical** live-session + `active` check `requireAuth` does — rejects the
+  handshake, so a deactivated account can't hold a socket. **Rooms are server-derived**
+  (`sockets/chat.handlers.ts`), never client-named: `chat:connectCamp` loads the
+  caller's membership and joins `group:{campId}:{groupId}` (participants **and** that
+  group's coordinator — the same shared room) and/or `organizers:{campId}`
+  (organizer-tier + org). `chat:send` re-derives `groupId` server-side (a client-sent
+  one is ignored), authorizes, persists via `chatService`, broadcasts `chat:message`;
+  failures return a `chat:error` ack. `chat:presence` is in-memory per-room (single
+  process — resets on restart, acceptable at current scale).
+- **Coordinator group home:** reuses `Membership.groupId` on `role==='coordinator'`
+  rows. Set at invite (`POST /organizer/team/invites` optional `groupId`, coordinator-only,
+  resolved against the caller's own camp) or after the fact
+  (`PATCH /organizer/team/:membershipId/group`, `requireRole('manager')`).
+
+Design + plan: `docs/superpowers/{specs,plans}/2026-07-21-realtime-chat-design.md`,
+`docs/superpowers/plans/2026-07-22-realtime-chat.md`.
+
 ## Deploy caveat — cross-origin cookies
 
 In dev the frontend reaches the API through Vite's `/api` proxy, so the cookie is
