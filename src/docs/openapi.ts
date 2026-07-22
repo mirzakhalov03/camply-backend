@@ -31,7 +31,12 @@ import {
 } from '../validators/announcement.validators'
 import { leaderboardParams, adjustPointsSchema } from '../validators/leaderboard.validators'
 import { presignSchema } from '../validators/upload.validators'
-import { inviteTeamSchema, teamInviteIdParam } from '../validators/team.validators'
+import {
+  inviteTeamSchema,
+  teamInviteIdParam,
+  membershipIdParam,
+  setCoordinatorGroupSchema,
+} from '../validators/team.validators'
 
 const registry = new OpenAPIRegistry()
 
@@ -1193,6 +1198,63 @@ registry.registerPath({
   responses: {
     204: { description: 'Cancelled' },
     404: { description: 'Invite not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}/chat/group/messages',
+  tags: ['Chat'],
+  summary: "The caller's group chat — latest 50 messages + room members",
+  request: { params: campIdParam },
+  responses: {
+    200: { description: 'Group history (empty if unassigned)' },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Not a member of this camp' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}/chat/organizers/messages',
+  tags: ['Chat'],
+  summary: 'The organizers channel — latest 50 messages + organizer-tier members',
+  request: { params: campIdParam },
+  responses: {
+    200: { description: 'Organizers history' },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Organizer-tier only' },
+  },
+})
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}/my-role',
+  tags: ['Chat'],
+  summary: "The caller's own role + group in this camp (coordinator gating)",
+  request: { params: campIdParam },
+  responses: {
+    200: { description: '{ role, groupId }' },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Not a member of this camp' },
+  },
+})
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/organizer/team/{membershipId}/group',
+  tags: ['Team'],
+  summary: "Reassign or clear a coordinator's chat group (manager only)",
+  request: {
+    params: membershipIdParam,
+    body: { content: { 'application/json': { schema: setCoordinatorGroupSchema } } },
+  },
+  responses: {
+    200: { description: 'Updated' },
+    400: { description: 'Target is not a coordinator / group not in camp' },
+    401: { description: 'Not authenticated' },
+    403: { description: 'Insufficient permissions' },
+    404: { description: 'Membership not found' },
   },
 })
 
