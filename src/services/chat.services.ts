@@ -3,6 +3,7 @@ import { MessageModel, type Message, type MessageChannel } from '../models/messa
 import { MembershipModel, ORGANIZER_SUB_ROLES } from '../models/membership.model'
 import { UserModel } from '../models/user.model'
 import { initialsOf, colorFor } from '../utils/avatar'
+import { chatReadService } from './chatRead.services'
 
 export const HISTORY_LIMIT = 50
 
@@ -116,11 +117,31 @@ export const chatService = {
     groupId: String(groupId),
     members: await chatService.groupMembers(campId, groupId),
     messages: await chatService.history(campId, 'group', groupId, viewerId),
+    othersLastReadAt: viewerId
+      ? ((
+          await chatReadService.othersLastReadAt({
+            campId,
+            channel: 'group',
+            groupId,
+            exceptUserId: new Types.ObjectId(viewerId),
+          })
+        )?.toISOString() ?? null)
+      : null,
   }),
 
   listOrganizersHistory: async (campId: Types.ObjectId, viewerId?: string) => ({
     members: await chatService.organizerMembers(campId),
     messages: await chatService.history(campId, 'organizers', null, viewerId),
+    othersLastReadAt: viewerId
+      ? ((
+          await chatReadService.othersLastReadAt({
+            campId,
+            channel: 'organizers',
+            groupId: null,
+            exceptUserId: new Types.ObjectId(viewerId),
+          })
+        )?.toISOString() ?? null)
+      : null,
   }),
 
   // Persist + project. The one write path both REST (none today) and the socket use.

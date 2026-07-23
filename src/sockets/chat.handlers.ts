@@ -3,7 +3,12 @@ import { Types } from 'mongoose'
 import { MembershipModel, ORGANIZER_SUB_ROLES } from '../models/membership.model'
 import { CampModel } from '../models/camp.model'
 import { chatService } from '../services/chat.services'
-import { sendMessageSchema, reactMessageSchema } from '../validators/chat.validators'
+import {
+  sendMessageSchema,
+  reactMessageSchema,
+  readMessagesSchema,
+} from '../validators/chat.validators'
+import { chatReadService } from '../services/chatRead.services'
 
 const groupRoom = (campId: string, groupId: string) => `group:${campId}:${groupId}`
 const orgRoom = (campId: string) => `organizers:${campId}`
@@ -63,6 +68,20 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
         groupId: null,
         onlineUserIds: await onlineUserIds(io, orgRoom(campId)),
       })
+    }
+
+    // Seed the unread badge for this socket: messages after my lastReadAt per room.
+    const unreadRooms: {
+      campId: Types.ObjectId
+      channel: 'group' | 'organizers'
+      groupId: Types.ObjectId | null
+    }[] = []
+    if (groupId)
+      unreadRooms.push({ campId: camp._id, channel: 'group', groupId: new Types.ObjectId(groupId) })
+    if (canOrganizers) unreadRooms.push({ campId: camp._id, channel: 'organizers', groupId: null })
+    if (unreadRooms.length) {
+      const counts = await chatReadService.unreadCounts(new Types.ObjectId(user.id), unreadRooms)
+      socket.emit('chat:unread', { rooms: counts })
     }
   })
 
@@ -136,6 +155,39 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
       emoji,
     })
     io.to(room).emit('chat:reaction', { channel, groupId, messageId, reactions })
+  })
+
+  socket.on('chat:read', async (payload: unknown) => {
+    const parsed = readMessagesSchema.safeParse(payload)
+    if (!parsed.success) return
+    const { campId, channel } = parsed.data
+    const entitlement = socket.data.byCamp?.get(campId)
+    if (!entitlement) return
+
+    let room: string
+    let groupId: Types.ObjectId | null = null
+    if (channel === 'organizers') {
+      if (!entitlement.canOrganizers) return
+      room = orgRoom(campId)
+    } else {
+      const gid = entitlement.groupId
+      if (!gid) return
+      groupId = new Types.ObjectId(gid)
+      room = groupRoom(campId, gid)
+    }
+
+    const lastReadAt = await chatReadService.mark({
+      campId: new Types.ObjectId(campId),
+      channel,
+      groupId,
+      userId: new Types.ObjectId(user.id),
+    })
+    io.to(room).emit('chat:read', {
+      channel,
+      groupId: groupId ? String(groupId) : null,
+      userId: user.id,
+      lastReadAt: lastReadAt.toISOString(),
+    })
   })
 
   // On disconnect, socket.io auto-leaves rooms; re-emit presence for each room the

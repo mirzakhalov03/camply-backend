@@ -30,3 +30,11 @@ export const reactMessageSchema = z.object({
 })
 
 export type ReactMessageInput = z.infer<typeof reactMessageSchema>
+
+// Socket chat:read payload — "I've read this room up to now". groupId re-derived.
+export const readMessagesSchema = z.object({
+  campId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid campId'),
+  channel: z.enum(MESSAGE_CHANNELS),
+})
+
+export type ReadMessagesInput = z.infer<typeof readMessagesSchema>
