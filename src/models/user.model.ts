@@ -31,6 +31,9 @@ const userSchema = new Schema(
     photo: { type: String, default: null },
     // Organizer's identity sub-role (coordinator, medic, …). Stored, not yet enforced.
     subRole: { type: String, enum: ORGANIZER_SUB_ROLES },
+    // UI language, synced from the client so the server can localize push copy.
+    // Defaults to 'uz'; the client PATCHes it on change.
+    language: { type: String, enum: ['uz', 'ru', 'en'], default: 'uz' },
     // Only org/organizer accounts have a password; participants sign in by phone.
     // select:false keeps it out of every query unless explicitly requested.
     passwordHash: { type: String, select: false },

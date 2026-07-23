@@ -31,3 +31,8 @@ export const completeProfile: RequestHandler = async (req, res) => {
   const user = await authService.completeProfile(req.auth!.user, req.body)
   res.json(user)
 }
+
+export const setLanguage: RequestHandler = async (req, res) => {
+  const user = await authService.setLanguage(req.auth!.user, req.body)
+  res.json(user)
+}

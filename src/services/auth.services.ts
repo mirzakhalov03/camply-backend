@@ -22,6 +22,7 @@ export type PublicUser = {
   age: number | null
   photo: string | null
   subRole: string | null
+  language: 'uz' | 'ru' | 'en'
   profileComplete: boolean
 }
 
@@ -40,6 +41,7 @@ export function toPublicUser(user: HydratedDocument<User>): PublicUser {
     age,
     photo: user.photo ?? null,
     subRole: user.subRole ?? null,
+    language: (user.language as 'uz' | 'ru' | 'en') ?? 'uz',
     profileComplete: Boolean(user.name) && Boolean(cityId) && typeof age === 'number' && age > 0,
   }
 }
@@ -112,6 +114,15 @@ export const authService = {
     }
     // Sub-role is an organizer concept; ignore it for participants ("store, not enforce").
     if (user.role === 'organizer' && input.subRole) user.subRole = input.subRole
+    await user.save()
+    return toPublicUser(user)
+  },
+
+  setLanguage: async (
+    user: HydratedDocument<User>,
+    input: { language: 'uz' | 'ru' | 'en' },
+  ): Promise<PublicUser> => {
+    user.language = input.language
     await user.save()
     return toPublicUser(user)
   },

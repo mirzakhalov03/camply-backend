@@ -9,6 +9,7 @@ import {
   readMessagesSchema,
 } from '../validators/chat.validators'
 import { chatReadService } from '../services/chatRead.services'
+import { notify } from '../services/notify.service'
 
 const groupRoom = (campId: string, groupId: string) => `group:${campId}:${groupId}`
 const orgRoom = (campId: string) => `organizers:${campId}`
@@ -111,6 +112,19 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
         text,
       })
       io.to(orgRoom(campId)).emit('chat:message', { channel: 'organizers', groupId: null, message })
+      // Push to organizer-tier members who aren't currently connected to this room.
+      const orgMembers = await chatService.organizerMembers(new Types.ObjectId(campId))
+      const orgConnected = await onlineUserIds(io, orgRoom(campId))
+      await notify.chatMessage({
+        campId,
+        channel: 'organizers',
+        groupId: null,
+        authorId: user.id,
+        authorName: orgMembers.find((m) => m.id === user.id)?.name || 'Camply',
+        text,
+        roomMemberIds: orgMembers.map((m) => m.id),
+        connectedUserIds: orgConnected,
+      })
       return
     }
 
@@ -128,6 +142,22 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
       text,
     })
     io.to(groupRoom(campId, groupId)).emit('chat:message', { channel: 'group', groupId, message })
+    // Push to group members who aren't currently connected to this room.
+    const grpMembers = await chatService.groupMembers(
+      new Types.ObjectId(campId),
+      new Types.ObjectId(groupId),
+    )
+    const grpConnected = await onlineUserIds(io, groupRoom(campId, groupId))
+    await notify.chatMessage({
+      campId,
+      channel: 'group',
+      groupId,
+      authorId: user.id,
+      authorName: grpMembers.find((m) => m.id === user.id)?.name || 'Camply',
+      text,
+      roomMemberIds: grpMembers.map((m) => m.id),
+      connectedUserIds: grpConnected,
+    })
   })
 
   socket.on('chat:react', async (payload: unknown) => {

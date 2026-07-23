@@ -26,5 +26,10 @@ export const completeProfileSchema = z.object({
   subRole: z.enum(ORGANIZER_SUB_ROLES).optional(),
 })
 
+export const setLanguageSchema = z.object({
+  language: z.enum(['uz', 'ru', 'en']),
+})
+
 export type LoginInput = z.infer<typeof loginSchema>
 export type CompleteProfileInput = z.infer<typeof completeProfileSchema>
+export type SetLanguageInput = z.infer<typeof setLanguageSchema>

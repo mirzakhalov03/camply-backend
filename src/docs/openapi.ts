@@ -1,6 +1,10 @@
 import { OpenAPIRegistry, OpenApiGeneratorV3 } from '@asteasolutions/zod-to-openapi'
 import { z } from '../config/zod'
-import { loginSchema, completeProfileSchema } from '../validators/auth.validators'
+import {
+  loginSchema,
+  completeProfileSchema,
+  setLanguageSchema,
+} from '../validators/auth.validators'
 import {
   createOrganizerSchema,
   updateOrganizerSchema,
@@ -1256,6 +1260,18 @@ registry.registerPath({
     401: { description: 'Not authenticated' },
     403: { description: 'Insufficient permissions' },
     404: { description: 'Membership not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/auth/me/language',
+  tags: ['Auth'],
+  summary: "Set the caller's UI language (synced for push localization)",
+  request: { body: { content: { 'application/json': { schema: setLanguageSchema } } } },
+  responses: {
+    200: { description: 'Updated user' },
+    401: { description: 'Not authenticated' },
   },
 })
 
