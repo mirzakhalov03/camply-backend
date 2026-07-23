@@ -25,6 +25,20 @@ const messageSchema = new Schema(
       ],
       default: [],
     },
+    // Optional denormalized snapshot of the message this one replies to. Stored
+    // (not populated) so the quote survives deletion of the original. Built
+    // server-side from a client-sent replyToId — see chat.services.postMessage.
+    replyTo: {
+      type: new Schema(
+        {
+          messageId: { type: Schema.Types.ObjectId, ref: 'Message', required: true },
+          authorName: { type: String, required: true },
+          text: { type: String, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
   },
   { timestamps: true },
 )

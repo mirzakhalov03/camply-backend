@@ -14,6 +14,12 @@ export const sendMessageSchema = z.object({
   campId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid campId'),
   channel: z.enum(MESSAGE_CHANNELS),
   text: messageTextSchema,
+  // Optional — the message this one replies to. Room-scoped + resolved to a
+  // snapshot server-side; a bad id degrades to a normal message.
+  replyToId: z
+    .string()
+    .regex(/^[0-9a-fA-F]{24}$/, 'Invalid replyToId')
+    .optional(),
 })
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>

@@ -12,6 +12,9 @@ export const HISTORY_LIMIT = 50
 // per viewer (mine is against viewerId).
 export type MessageReaction = { emoji: string; count: number; mine: boolean }
 
+// Denormalized snapshot of a replied-to message (viewer-neutral, deletion-proof).
+export type ReplySnapshot = { messageId: string; authorName: string; text: string }
+
 export type ChatMessage = {
   id: string
   authorId: string
@@ -20,6 +23,7 @@ export type ChatMessage = {
   time: string // HH:MM
   createdAt: string // ISO — the client can re-derive `time` and ordering
   reactions: MessageReaction[]
+  replyTo?: ReplySnapshot
 }
 
 export type ChatMember = {
@@ -33,6 +37,10 @@ export type ChatMember = {
 
 const hhmm = (d: Date): string => d.toTimeString().slice(0, 5)
 
+const REPLY_SNIPPET_MAX = 120
+const snippet = (s: string) =>
+  s.length > REPLY_SNIPPET_MAX ? `${s.slice(0, REPLY_SNIPPET_MAX)}…` : s
+
 function toChatMessage(doc: Message, viewerId?: string): ChatMessage {
   const createdAt = (doc as unknown as { createdAt: Date }).createdAt
   return {
@@ -43,6 +51,13 @@ function toChatMessage(doc: Message, viewerId?: string): ChatMessage {
     time: hhmm(createdAt),
     createdAt: createdAt.toISOString(),
     reactions: aggregateReactions(doc.reactions ?? [], viewerId),
+    replyTo: doc.replyTo
+      ? {
+          messageId: String(doc.replyTo.messageId),
+          authorName: doc.replyTo.authorName,
+          text: doc.replyTo.text,
+        }
+      : undefined,
   }
 }
 
@@ -144,20 +159,41 @@ export const chatService = {
       : null,
   }),
 
-  // Persist + project. The one write path both REST (none today) and the socket use.
+  // Persist + project. The one write path both REST (none today) and the socket
+  // use. Resolves an optional reply target to a room-scoped snapshot; a target
+  // outside this room (or missing) is dropped, degrading to a normal message.
   postMessage: async (input: {
     campId: Types.ObjectId
     channel: MessageChannel
     groupId: Types.ObjectId | null
     authorId: Types.ObjectId
     text: string
+    replyToId?: Types.ObjectId
   }): Promise<ChatMessage> => {
+    const groupId = input.channel === 'group' ? input.groupId : null
+
+    let replyTo: { messageId: Types.ObjectId; authorName: string; text: string } | null = null
+    if (input.replyToId) {
+      const orig = await MessageModel.findOne({
+        _id: input.replyToId,
+        campId: input.campId,
+        channel: input.channel,
+        groupId,
+      })
+      if (orig) {
+        const author = await UserModel.findById(orig.authorId)
+        const authorName = author ? `${author.name ?? ''} ${author.surname ?? ''}`.trim() : ''
+        replyTo = { messageId: orig._id, authorName, text: snippet(orig.text) }
+      }
+    }
+
     const doc = await MessageModel.create({
       campId: input.campId,
       channel: input.channel,
-      groupId: input.channel === 'group' ? input.groupId : null,
+      groupId,
       authorId: input.authorId,
       text: input.text,
+      replyTo,
     })
     return toChatMessage(doc)
   },

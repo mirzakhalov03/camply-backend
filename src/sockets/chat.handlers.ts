@@ -92,7 +92,7 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
       socket.emit('chat:error', { code: 'invalid', message: 'Invalid message' })
       return
     }
-    const { campId, channel, text } = parsed.data
+    const { campId, channel, text, replyToId } = parsed.data
     const entitlement = socket.data.byCamp?.get(campId)
     if (!entitlement) {
       socket.emit('chat:error', { code: 'not_connected', message: 'Not connected to this camp' })
@@ -110,6 +110,7 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
         groupId: null,
         authorId: new Types.ObjectId(user.id),
         text,
+        replyToId: replyToId ? new Types.ObjectId(replyToId) : undefined,
       })
       io.to(orgRoom(campId)).emit('chat:message', { channel: 'organizers', groupId: null, message })
       // Push to organizer-tier members who aren't currently connected to this room.
@@ -140,6 +141,7 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
       groupId: new Types.ObjectId(groupId),
       authorId: new Types.ObjectId(user.id),
       text,
+      replyToId: replyToId ? new Types.ObjectId(replyToId) : undefined,
     })
     io.to(groupRoom(campId, groupId)).emit('chat:message', { channel: 'group', groupId, message })
     // Push to group members who aren't currently connected to this room.
