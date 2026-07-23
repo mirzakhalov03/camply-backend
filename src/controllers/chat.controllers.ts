@@ -8,14 +8,15 @@ import { chatService } from '../services/chat.services'
 export const getGroupMessages: RequestHandler = async (req, res) => {
   const campId = req.camp!._id
   const groupId = req.membership?.groupId
+  const viewerId = String(req.auth!.user._id)
   if (!groupId) {
     res.json({ groupId: null, members: [], messages: [] })
     return
   }
-  res.json(await chatService.listGroupHistory(campId, groupId as Types.ObjectId))
+  res.json(await chatService.listGroupHistory(campId, groupId as Types.ObjectId, viewerId))
 }
 
 // The organizers channel — organizer-tier only (requireCampManager gates the route).
 export const getOrganizerMessages: RequestHandler = async (req, res) => {
-  res.json(await chatService.listOrganizersHistory(req.camp!._id))
+  res.json(await chatService.listOrganizersHistory(req.camp!._id, String(req.auth!.user._id)))
 }

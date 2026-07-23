@@ -11,6 +11,20 @@ const messageSchema = new Schema(
     groupId: { type: Schema.Types.ObjectId, ref: 'Group', default: null },
     authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     text: { type: String, required: true, trim: true, minlength: 1, maxlength: 2000 },
+    // Embedded reactions — bounded per message (a handful of emojis). One {userId,
+    // emoji} pair per reactor per emoji; toggling that pair removes it. No _id on subdocs.
+    reactions: {
+      type: [
+        new Schema(
+          {
+            userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+            emoji: { type: String, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
   },
   { timestamps: true },
 )

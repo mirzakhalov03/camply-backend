@@ -7,7 +7,10 @@ import { initialsOf, colorFor } from '../utils/avatar'
 export const HISTORY_LIMIT = 50
 
 // The frontend ChatMessage contract (lib/chat.ts). Text-only server-side: kind is
-// always 'text'; sentByMe/status/reactions are resolved/added client-side.
+// always 'text'; sentByMe/status are resolved client-side. reactions are aggregated
+// per viewer (mine is against viewerId).
+export type MessageReaction = { emoji: string; count: number; mine: boolean }
+
 export type ChatMessage = {
   id: string
   authorId: string
@@ -15,6 +18,7 @@ export type ChatMessage = {
   text: string
   time: string // HH:MM
   createdAt: string // ISO — the client can re-derive `time` and ordering
+  reactions: MessageReaction[]
 }
 
 export type ChatMember = {
@@ -28,7 +32,7 @@ export type ChatMember = {
 
 const hhmm = (d: Date): string => d.toTimeString().slice(0, 5)
 
-function toChatMessage(doc: Message): ChatMessage {
+function toChatMessage(doc: Message, viewerId?: string): ChatMessage {
   const createdAt = (doc as unknown as { createdAt: Date }).createdAt
   return {
     id: String(doc._id),
@@ -37,7 +41,23 @@ function toChatMessage(doc: Message): ChatMessage {
     text: doc.text,
     time: hhmm(createdAt),
     createdAt: createdAt.toISOString(),
+    reactions: aggregateReactions(doc.reactions ?? [], viewerId),
   }
+}
+
+// Group the flat {userId, emoji} pairs into { emoji, count, mine } chips.
+function aggregateReactions(
+  raw: { userId: unknown; emoji: string }[],
+  viewerId?: string,
+): MessageReaction[] {
+  const byEmoji = new Map<string, { count: number; mine: boolean }>()
+  for (const r of raw) {
+    const entry = byEmoji.get(r.emoji) ?? { count: 0, mine: false }
+    entry.count += 1
+    if (viewerId && String(r.userId) === viewerId) entry.mine = true
+    byEmoji.set(r.emoji, entry)
+  }
+  return [...byEmoji.entries()].map(([emoji, v]) => ({ emoji, ...v }))
 }
 
 // Project a set of memberships (that carry a bound userId) into ChatMembers.
@@ -69,11 +89,12 @@ export const chatService = {
     campId: Types.ObjectId,
     channel: MessageChannel,
     groupId: Types.ObjectId | null,
+    viewerId?: string,
   ) => {
     const docs = await MessageModel.find({ campId, channel, groupId })
       .sort({ createdAt: -1 })
       .limit(HISTORY_LIMIT)
-    return docs.reverse().map(toChatMessage)
+    return docs.reverse().map((d) => toChatMessage(d, viewerId))
   },
 
   // Every membership (any role) in the group room = participants + the coordinator.
@@ -91,15 +112,15 @@ export const chatService = {
     return membersFrom(rows)
   },
 
-  listGroupHistory: async (campId: Types.ObjectId, groupId: Types.ObjectId) => ({
+  listGroupHistory: async (campId: Types.ObjectId, groupId: Types.ObjectId, viewerId?: string) => ({
     groupId: String(groupId),
     members: await chatService.groupMembers(campId, groupId),
-    messages: await chatService.history(campId, 'group', groupId),
+    messages: await chatService.history(campId, 'group', groupId, viewerId),
   }),
 
-  listOrganizersHistory: async (campId: Types.ObjectId) => ({
+  listOrganizersHistory: async (campId: Types.ObjectId, viewerId?: string) => ({
     members: await chatService.organizerMembers(campId),
-    messages: await chatService.history(campId, 'organizers', null),
+    messages: await chatService.history(campId, 'organizers', null, viewerId),
   }),
 
   // Persist + project. The one write path both REST (none today) and the socket use.
@@ -118,5 +139,34 @@ export const chatService = {
       text: input.text,
     })
     return toChatMessage(doc)
+  },
+
+  // Toggle one {user, emoji} pair on a message; returns the message's { emoji, count }
+  // aggregate (identities are never broadcast — mine is computed client-side).
+  toggleReaction: async (input: {
+    messageId: Types.ObjectId
+    userId: Types.ObjectId
+    emoji: string
+  }): Promise<{ emoji: string; count: number }[]> => {
+    const doc = await MessageModel.findById(input.messageId)
+    if (!doc) throw new Error('message_not_found')
+    const has = (doc.reactions ?? []).some(
+      (r) => String(r.userId) === String(input.userId) && r.emoji === input.emoji,
+    )
+    if (has) {
+      await MessageModel.updateOne(
+        { _id: input.messageId },
+        { $pull: { reactions: { userId: input.userId, emoji: input.emoji } } },
+      )
+    } else {
+      await MessageModel.updateOne(
+        { _id: input.messageId },
+        { $push: { reactions: { userId: input.userId, emoji: input.emoji } } },
+      )
+    }
+    const fresh = await MessageModel.findById(input.messageId)
+    const counts = new Map<string, number>()
+    for (const r of fresh?.reactions ?? []) counts.set(r.emoji, (counts.get(r.emoji) ?? 0) + 1)
+    return [...counts.entries()].map(([emoji, count]) => ({ emoji, count }))
   },
 }
