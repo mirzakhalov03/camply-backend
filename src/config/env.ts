@@ -36,6 +36,11 @@ const envSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   // CDN/base URL objects are served from. Without it, only the key is returned.
   S3_PUBLIC_BASE_URL: z.string().optional(),
+  // Web Push (VAPID). OPTIONAL so the app boots before keys are generated — the
+  // sender no-ops with a warning when unset. Generate with `npm run vapid:gen`.
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('mailto:ops@camply.dev'),
 })
 
 const parsed = envSchema.safeParse(process.env)
