@@ -3,7 +3,7 @@ import { Types } from 'mongoose'
 import { MembershipModel, ORGANIZER_SUB_ROLES } from '../models/membership.model'
 import { CampModel } from '../models/camp.model'
 import { chatService } from '../services/chat.services'
-import { sendMessageSchema } from '../validators/chat.validators'
+import { sendMessageSchema, reactMessageSchema } from '../validators/chat.validators'
 
 const groupRoom = (campId: string, groupId: string) => `group:${campId}:${groupId}`
 const orgRoom = (campId: string) => `organizers:${campId}`
@@ -109,6 +109,33 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
       text,
     })
     io.to(groupRoom(campId, groupId)).emit('chat:message', { channel: 'group', groupId, message })
+  })
+
+  socket.on('chat:react', async (payload: unknown) => {
+    const parsed = reactMessageSchema.safeParse(payload)
+    if (!parsed.success) return
+    const { campId, channel, messageId, emoji } = parsed.data
+    const entitlement = socket.data.byCamp?.get(campId)
+    if (!entitlement) return
+
+    let room: string
+    let groupId: string | null = null
+    if (channel === 'organizers') {
+      if (!entitlement.canOrganizers) return
+      room = orgRoom(campId)
+    } else {
+      const gid = entitlement.groupId
+      if (!gid) return
+      groupId = gid
+      room = groupRoom(campId, gid)
+    }
+
+    const reactions = await chatService.toggleReaction({
+      messageId: new Types.ObjectId(messageId),
+      userId: new Types.ObjectId(user.id),
+      emoji,
+    })
+    io.to(room).emit('chat:reaction', { channel, groupId, messageId, reactions })
   })
 
   // On disconnect, socket.io auto-leaves rooms; re-emit presence for each room the
