@@ -269,6 +269,50 @@ receiving happen on the socket.
 Design + plan: `docs/superpowers/{specs,plans}/2026-07-21-realtime-chat-design.md`,
 `docs/superpowers/plans/2026-07-22-realtime-chat.md`.
 
+### Chat liveness — reactions, read receipts, unread (2026-07-23)
+
+Extends the above; same Socket.IO transport + `chatService`.
+
+- **Reactions are server-persisted.** `Message.reactions: [{ userId, emoji }]`
+  (embedded, bounded). `chatService.toChatMessage(doc, viewerId?)` aggregates to
+  `{ emoji, count, mine }[]` (mine per viewer). `chatService.toggleReaction(...)`
+  toggles one pair and returns `{ emoji, count }[]`. Socket `chat:react { campId,
+  channel, messageId, emoji }` (emoji allowlisted in `chat.validators`) re-derives
+  entitlement like `chat:send`, toggles, and broadcasts `chat:reaction { messageId,
+  reactions: {emoji,count}[] }` — **counts only, no reactor identities on the wire**
+  (clients own their `mine`).
+- **Read receipts = "seen by anyone."** `ChatRead { campId, channel, groupId|null,
+  userId, lastReadAt }` (unique per room+user). `chatRead.services`: `mark`,
+  `othersLastReadAt` (max over OTHER members — seeds the ✓✓), `unreadCounts`. Socket
+  `chat:read { campId, channel }` upserts + broadcasts `chat:read { userId,
+  lastReadAt }`. REST history payloads now carry `othersLastReadAt`. A message is
+  read when any other member's `lastReadAt ≥ its createdAt`.
+- **Unread seed:** `chat:connectCamp` emits `chat:unread { rooms: [{channel, groupId,
+  count}] }` to the joining socket (messages after my `lastReadAt`).
+
+## Push notifications (`/push/subscribe`, `notify.service`, `sockets` dispatch)
+
+Implements the frozen push contract from the never-built `2026-07-20-realtime-delivery`
+batch — but on the shipped Socket.IO transport, for the chat slice.
+
+- **Model:** `PushSubscription { userId, endpoint (unique), keys{p256dh,auth},
+  userAgent }`. **Routes:** `POST /push/subscribe { subscription }` (idempotent
+  upsert on `endpoint`) + `DELETE /push/subscribe { endpoint }`, both `requireAuth`.
+- **`services/push/sender.ts`** wraps `web-push`; no-ops with a warning if VAPID env
+  is unset; prunes a subscription on `410`/`404`. **Env (all optional):**
+  `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. Generate with
+  **`npm run vapid:gen`** (public key → frontend `VITE_VAPID_PUBLIC_KEY`).
+- **`services/notify.service.ts`** is the single push fan-out. `notify.chatMessage`
+  pushes to room members **minus the author minus everyone currently in that room's
+  socket** (`fetchSockets()` presence). Called from `chat.handlers` after each
+  `chat:message` broadcast. Copy is rendered per recipient's `User.language` from the
+  small server map **`src/i18n/notifications.ts`** (not the frontend translations).
+- **`User.language`** (`'uz'|'ru'|'en'`, default `'uz'`) synced via
+  **`PATCH /auth/me/language`**; exposed on `toPublicUser`. Announcement/schedule/
+  leaderboard push remain a follow-up that plugs into the same `notify.service`.
+
+Design + plan: `docs/superpowers/{specs,plans}/2026-07-23-chat-reactions-receipts-push*.md`.
+
 ## Deploy caveat — cross-origin cookies
 
 In dev the frontend reaches the API through Vite's `/api` proxy, so the cookie is
