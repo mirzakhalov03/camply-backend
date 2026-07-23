@@ -31,6 +31,7 @@ import {
 } from '../validators/announcement.validators'
 import { leaderboardParams, adjustPointsSchema } from '../validators/leaderboard.validators'
 import { presignSchema } from '../validators/upload.validators'
+import { subscribeSchema, unsubscribeSchema } from '../validators/push.validators'
 import {
   inviteTeamSchema,
   teamInviteIdParam,
@@ -1255,6 +1256,30 @@ registry.registerPath({
     401: { description: 'Not authenticated' },
     403: { description: 'Insufficient permissions' },
     404: { description: 'Membership not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/push/subscribe',
+  tags: ['Push'],
+  summary: 'Register a Web Push subscription (idempotent upsert on endpoint)',
+  request: { body: { content: { 'application/json': { schema: subscribeSchema } } } },
+  responses: {
+    201: { description: 'Subscription stored' },
+    401: { description: 'Not authenticated' },
+  },
+})
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/push/subscribe',
+  tags: ['Push'],
+  summary: 'Remove a Web Push subscription by endpoint',
+  request: { body: { content: { 'application/json': { schema: unsubscribeSchema } } } },
+  responses: {
+    204: { description: 'Subscription removed' },
+    401: { description: 'Not authenticated' },
   },
 })
 

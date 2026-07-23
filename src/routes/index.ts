@@ -7,6 +7,7 @@ import meRoutes from './me.routes'
 import { organizerCampRouter, campRouter } from './camp.routes'
 import teamRoutes from './team.routes'
 import uploadRoutes from './upload.routes'
+import pushRoutes from './push.routes'
 
 const router = Router()
 
@@ -20,6 +21,7 @@ router.use('/managers', managerRoutes)
 router.use('/invite', inviteRoutes)
 router.use('/me', meRoutes)
 router.use('/uploads', uploadRoutes)
+router.use('/push', pushRoutes)
 // Mount the specific /organizer/team before the broader /organizer camp router so
 // it's handled directly (no redundant pass through the camp router's middleware).
 router.use('/organizer/team', teamRoutes)
