@@ -255,6 +255,22 @@ receiving happen on the socket.
   letting the object literal serialize them. Response contract unchanged.
   **Rule: never `await` a per-row query inside a loop — batch with `$in`.**
   Design/plan: `docs/superpowers/{specs,plans}/2026-07-27-chat-load-performance*.md`.
+  **Send idempotency (2026-07-27):** `Message.clientMsgId` (optional, client
+  UUID) + a **partial** unique index on `{authorId, clientMsgId}`
+  (`partialFilterExpression: { clientMsgId: { $exists: true } }`). It must be
+  PARTIAL, not sparse — a compound sparse index covers documents having at least
+  one indexed field, so every pre-existing message (authorId present,
+  clientMsgId absent) would collide under `unique`. `postMessage` returns the
+  existing message on a `clientMsgId` hit (checked *before* the reply resolution,
+  so a dedupe hit skips that work too) and resolves an `E11000` race by
+  re-reading, so the frontend outbox can retry safely. A dedupe hit still
+  re-broadcasts — clients dedupe by `id`, and the replay is what lets the
+  original sender reconcile an echo it missed. **Every `chat:error` inside
+  `chat:send` echoes `clientMsgId`** so a client can attribute a failed send; the
+  `invalid` branch reads it off the RAW payload, since parsing is what failed
+  there. `sendMessageSchema` requires a real **UUID** — a client sending any
+  other id shape gets `code: 'invalid'`. Design/plan:
+  `docs/superpowers/{specs,plans}/2026-07-27-chat-offline-outbox*.md`.
 - **REST** on the shared `campRouter`: `GET /camps/:id/chat/group/messages`
   (member-level; `groupId` from `req.membership`, **never** the URL — unassigned →
   `200 {groupId:null, members:[], messages:[]}`) and

@@ -1281,4 +1281,69 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Cross-plan dependency** — this plan requires the single-argument `campKeys.chat(campId)` from `2026-07-27-chat-load-performance.md`. Stated in the header as a hard prerequisite with a `grep` check. Task 4 Step 4 also assumes that plan's Task 4 (reconnect invalidation) already added the `connect`-handler block it appends to; if it hasn't, add the `flushOutbox()` call to the existing handler instead.
 
-**Riskiest step, flagged for the reviewer** — Task 1 Step 7. Partial-vs-sparse is the one mistake here that breaks *all* sending, on existing databases only, with an error message that points at the wrong field. It gets its own verification step with the exact `mongosh` commands and the manual `dropIndex` recovery.
+**Riskiest step, flagged for the reviewer** — Task 1 Step 7.
+
+---
+
+## Execution notes (2026-07-27, added while implementing)
+
+Four things differed from the plan as written. Recorded so the next reader isn't
+misled by the steps above.
+
+1. **`insertPending` must NOT create the cache entry.** Task 4 Step 1 wrote
+   `(prev ?? { messages: [] })`, which fabricates a history when none is cached.
+   That entry has no `groupId` and no `members`, so `useChat`'s `isPending` flips
+   false and `ChatScreen` renders `chat.noGroupYet` *over a thread that simply
+   hadn't loaded yet*. Implemented with a `if (prev == null) return prev` guard —
+   only ever add to a real history.
+
+2. **That guard exposed a gap the plan assumed away, so `restorePendingBubbles`
+   was added.** Task 5 Step 6 expects a pending bubble to still be visible after
+   an **offline reload**. It wouldn't be: the query cache rehydrates from
+   IndexedDB *without* pending bubbles, and the only thing that re-inserts them
+   (`flushOutbox`) returns early unless the socket is connected — which offline it
+   never is. `restorePendingBubbles(campId)` re-inserts without needing a socket
+   and is called from `ChatScreen` and `OrgChatScreen` once their history exists.
+   Without it, offline-queued messages are invisible until reconnect, which
+   defeats the feature.
+
+3. **`enqueue` takes a full `OutboxEntry`.** The plan typed it
+   `Omit<OutboxEntry, 'status' | 'attempts'>` (Task 3) while Task 4 constructs and
+   passes a complete entry. Both compile, but the `Omit` version silently
+   re-stamps `status`/`attempts` the caller already set. Narrowed to the honest
+   signature.
+
+4. **`clientMsgId` must be a real UUID.** Obvious in hindsight —
+   `sendMessageSchema` uses `z.string().uuid()` — but worth stating: any other id
+   shape is rejected with `chat:error { code: 'invalid' }` and nothing persists.
+   The first run of the verification probe failed for exactly this reason.
+
+**Verified without a browser.** Both repos typecheck/lint/format clean and the
+frontend production build succeeds. Beyond that:
+
+- **The partial index, on the real DB** (20 pre-existing messages): built as
+  `partialFilterExpression: { clientMsgId: { $exists: true } }`, `unique: true`,
+  **not** sparse. A duplicate `(authorId, clientMsgId)` rejects with `11000`; a
+  plain insert with **no** `clientMsgId` still succeeds — the exact case the
+  sparse variant would have broken. *(Covers Task 1 Steps 7–8.)*
+- **The idempotency contract end-to-end**, via a logged-in socket probe against
+  the running server: two `chat:send`s with the same `clientMsgId` produced
+  **one** document and **two** broadcasts sharing the **same** message id, with
+  `clientMsgId` echoed. That is precisely what makes the client render one
+  bubble — first echo replaces the pending bubble, second is a no-op dedupe by
+  id. An invalid payload emitted `chat:error` carrying its `clientMsgId`.
+  *(Covers Task 5 Step 5's dedupe claim and Task 4 Step 4's attribution.)*
+- **The privacy allowlist**, by calling `shouldPersistQuery` against real key
+  factories: `chat`, `chatOrganizers`, `myGroup`, `myRole` persist; **`mapPins`
+  does not**, nor do `auth`/`participant` keys. *(Covers Task 2 Step 8's
+  guardrail.)* Note `organizerKeys.orgChat` is `['organizer', 'chat']`, so it is
+  allowlisted too — chat data, no privacy concern, but be aware it's included.
+
+**Still owed — manual browser verification.** These genuinely need a human at a
+browser and were NOT done: offline read after a full reload (2.9), cold PWA
+launch (2.10), logout wiping IndexedDB (2.11), the online send feeling instant
+with exactly one bubble (4.6, 5.4), offline queueing of three messages and their
+in-order flush (4.7), reload-mid-pending (5.6), the failure path after three
+burned attempts (6.10), and trilingual + dark-mode rendering of the four new
+strings (6.11). A native UZ/RU reader should also sanity-check the four new
+strings. Partial-vs-sparse is the one mistake here that breaks *all* sending, on existing databases only, with an error message that points at the wrong field. It gets its own verification step with the exact `mongosh` commands and the manual `dropIndex` recovery.
