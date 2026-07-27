@@ -20,6 +20,9 @@ export const sendMessageSchema = z.object({
     .string()
     .regex(/^[0-9a-fA-F]{24}$/, 'Invalid replyToId')
     .optional(),
+  // Client-generated idempotency key. Optional: an older client that omits it
+  // behaves exactly as before. Never trusted beyond dedupe.
+  clientMsgId: z.string().uuid('Invalid clientMsgId').optional(),
 })
 
 export type SendMessageInput = z.infer<typeof sendMessageSchema>

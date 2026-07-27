@@ -39,12 +39,31 @@ const messageSchema = new Schema(
       ),
       default: null,
     },
+    // Client-generated UUID for send idempotency. The outbox retries a send whose
+    // echo it never saw; without this, a retry after a successful persist would
+    // double-post. Trusted for DEDUPE ONLY — never identity, ordering, or authz.
+    clientMsgId: { type: String, default: undefined },
   },
   { timestamps: true },
 )
 
 // History load is always "latest N for this exact room" — this is that query shape.
 messageSchema.index({ campId: 1, channel: 1, groupId: 1, createdAt: 1 })
+
+/*
+  Send idempotency: one message per (author, clientMsgId).
+
+  This MUST be `partialFilterExpression`, NOT `sparse`. A compound sparse index
+  includes a document that has AT LEAST ONE of the indexed fields — every
+  existing message has an authorId, so all of them would be indexed with
+  clientMsgId: null, and the second pre-existing message by any author would
+  throw E11000 under `unique`. A partial index covers only documents that
+  actually carry a clientMsgId.
+*/
+messageSchema.index(
+  { authorId: 1, clientMsgId: 1 },
+  { unique: true, partialFilterExpression: { clientMsgId: { $exists: true } } },
+)
 
 export type Message = InferSchemaType<typeof messageSchema> & { _id: Types.ObjectId }
 export const MessageModel = model('Message', messageSchema)

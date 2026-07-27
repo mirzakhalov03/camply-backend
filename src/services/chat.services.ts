@@ -24,6 +24,8 @@ export type ChatMessage = {
   createdAt: string // ISO — the client can re-derive `time` and ordering
   reactions: MessageReaction[]
   replyTo?: ReplySnapshot
+  /** Echoed back so the sender can match this to its optimistic bubble. */
+  clientMsgId?: string
 }
 
 export type ChatMember = {
@@ -63,6 +65,7 @@ function toChatMessage(doc: MessageLike, viewerId?: string): ChatMessage {
           text: doc.replyTo.text,
         }
       : undefined,
+    clientMsgId: doc.clientMsgId ?? undefined,
   }
 }
 
@@ -195,8 +198,20 @@ export const chatService = {
     authorId: Types.ObjectId
     text: string
     replyToId?: Types.ObjectId
+    clientMsgId?: string
   }): Promise<ChatMessage> => {
     const groupId = input.channel === 'group' ? input.groupId : null
+
+    // Idempotency: the outbox retries a send whose echo it never saw. Same shape
+    // as campService.createFull's clientRequestId dedupe. Checked BEFORE the
+    // reply resolution below — a dedupe hit must skip that work too.
+    if (input.clientMsgId) {
+      const existing = await MessageModel.findOne({
+        authorId: input.authorId,
+        clientMsgId: input.clientMsgId,
+      }).lean()
+      if (existing) return toChatMessage(existing)
+    }
 
     let replyTo: { messageId: Types.ObjectId; authorName: string; text: string } | null = null
     if (input.replyToId) {
@@ -213,15 +228,29 @@ export const chatService = {
       }
     }
 
-    const doc = await MessageModel.create({
-      campId: input.campId,
-      channel: input.channel,
-      groupId,
-      authorId: input.authorId,
-      text: input.text,
-      replyTo,
-    })
-    return toChatMessage(doc)
+    try {
+      const doc = await MessageModel.create({
+        campId: input.campId,
+        channel: input.channel,
+        groupId,
+        authorId: input.authorId,
+        text: input.text,
+        replyTo,
+        clientMsgId: input.clientMsgId,
+      })
+      return toChatMessage(doc)
+    } catch (err) {
+      // Two retries raced past the findOne above; the unique index is the
+      // tiebreaker. Re-read the winner instead of failing the send.
+      if ((err as { code?: number }).code === 11000 && input.clientMsgId) {
+        const won = await MessageModel.findOne({
+          authorId: input.authorId,
+          clientMsgId: input.clientMsgId,
+        }).lean()
+        if (won) return toChatMessage(won)
+      }
+      throw err
+    }
   },
 
   // Toggle one {user, emoji} pair on a message; returns the message's { emoji, count }
