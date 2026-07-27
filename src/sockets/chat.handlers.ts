@@ -88,20 +88,37 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
 
   socket.on('chat:send', async (payload: unknown) => {
     const parsed = sendMessageSchema.safeParse(payload)
+    // Every chat:error inside chat:send echoes clientMsgId so the client's outbox
+    // can attribute the failure to one queued message. Read off the RAW payload
+    // for the invalid branch — parsing is exactly what failed there.
+    const rawClientMsgId = (payload as { clientMsgId?: unknown } | null)?.clientMsgId
+    const failedId = typeof rawClientMsgId === 'string' ? rawClientMsgId : undefined
     if (!parsed.success) {
-      socket.emit('chat:error', { code: 'invalid', message: 'Invalid message' })
+      socket.emit('chat:error', {
+        code: 'invalid',
+        message: 'Invalid message',
+        clientMsgId: failedId,
+      })
       return
     }
     const { campId, channel, text, replyToId, clientMsgId } = parsed.data
     const entitlement = socket.data.byCamp?.get(campId)
     if (!entitlement) {
-      socket.emit('chat:error', { code: 'not_connected', message: 'Not connected to this camp' })
+      socket.emit('chat:error', {
+        code: 'not_connected',
+        message: 'Not connected to this camp',
+        clientMsgId,
+      })
       return
     }
 
     if (channel === 'organizers') {
       if (!entitlement.canOrganizers) {
-        socket.emit('chat:error', { code: 'forbidden', message: 'Not an organizer here' })
+        socket.emit('chat:error', {
+          code: 'forbidden',
+          message: 'Not an organizer here',
+          clientMsgId,
+        })
         return
       }
       const message = await chatService.postMessage({
@@ -132,7 +149,11 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
 
     // channel === 'group' — groupId is SERVER-derived; a client-sent one is ignored.
     if (!entitlement.groupId) {
-      socket.emit('chat:error', { code: 'no_group', message: 'You are not in a group' })
+      socket.emit('chat:error', {
+        code: 'no_group',
+        message: 'You are not in a group',
+        clientMsgId,
+      })
       return
     }
     const groupId = entitlement.groupId
