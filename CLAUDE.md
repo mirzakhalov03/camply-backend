@@ -243,6 +243,18 @@ receiving happen on the socket.
   `organizerMembers` (bound-user projections, same `initialsOf`/`colorFor` pattern),
   `postMessage`. Messages carry only `authorId`; the client resolves the author
   against the `members[]` the history/bootstrap supplies.
+  **Member projection is batched (2026-07-27):** `membersFrom` does ONE
+  `UserModel.find({_id:{$in:…}}).select(…).lean()` plus a Map — it used to run
+  `findById` inside a `for` loop. Because the DB is remote (`mongodb+srv`), that
+  loop cost one ~180ms network round-trip **per member**, not one cheap lookup:
+  the organizers history measured **2.15s → 0.90s** on the demo seed. All three
+  chat reads are `.lean()` (everything is projected to a DTO immediately, so
+  `toChatMessage` takes a `MessageLike` that accepts a lean object OR a hydrated
+  document — `postMessage` still passes the latter), and both `list*History`
+  assemblers wrap their three independent queries in `Promise.all` instead of
+  letting the object literal serialize them. Response contract unchanged.
+  **Rule: never `await` a per-row query inside a loop — batch with `$in`.**
+  Design/plan: `docs/superpowers/{specs,plans}/2026-07-27-chat-load-performance*.md`.
 - **REST** on the shared `campRouter`: `GET /camps/:id/chat/group/messages`
   (member-level; `groupId` from `req.membership`, **never** the URL — unassigned →
   `200 {groupId:null, members:[], messages:[]}`) and

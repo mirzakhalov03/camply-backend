@@ -797,4 +797,58 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Known ordering dependency** — Task 2 Step 6 leaves `ChatScreen` with a dangling `groupId` reference that Task 3 Step 5 resolves. This is called out inline in Task 2 so an implementer reading tasks out of order isn't surprised. Task 2's own typecheck (2.7) is documented as possibly non-clean for exactly this reason; Task 3's (3.7) is the real gate.
 
-**Copy review** — the three `noGroupYet` strings are the only new user-facing copy. A native UZ/RU reader should sanity-check them before merge; the meaning to preserve is *"you have no group yet; the chat appears once an organizer adds you"* — not an error, not an apology.
+**Copy review** — the three `noGroupYet` strings are the only new user-facing copy.
+A native UZ/RU reader should still sanity-check them; see the note below.
+
+---
+
+## Execution notes (2026-07-27, added while implementing)
+
+Three things differed from the plan as written. Recorded so the next reader
+isn't misled by the steps above.
+
+1. **Task 3 Step 5 was wrong about where `groupId` goes.** The plan says to
+   declare `const groupId = data.groupId ?? ''` *after* the loading/error guards.
+   That doesn't compile: the unread-room `useEffect` (`ChatScreen.tsx` ~L69)
+   references `groupId` and runs *before* the guards, so TS reports
+   "Block-scoped variable used before its declaration." It is declared
+   immediately after the `useChat` call instead, as `data?.groupId ?? ''` —
+   optional because it is read while `data` may still be undefined. The
+   `if (!groupId)` → `chat.noGroupYet` branch stays after the guards as planned.
+
+2. **The `isPending`/`isError` branch fix moved from Task 3 into Task 2.** The
+   plan expected Task 2 to leave a transient type error for Task 3 to resolve.
+   It can't: `npm run validate` (which includes `tsc`) is the **pre-commit
+   hook**, so a commit that doesn't typecheck cannot be made. Task 2 therefore
+   fixed the branch condition and kept the old `t.chat.loading` text; Task 3
+   swapped that text for `<ChatSkeleton />` and added `chat.noGroupYet`. Each
+   commit typechecks on its own. *(A plan for a repo with a validating
+   pre-commit hook can't schedule a knowingly-broken intermediate commit.)*
+
+3. **The N+1 was far worse than the plan assumed, for a reason the plan
+   missed.** `MONGO_URI` is `mongodb+srv://` — a remote Atlas cluster — so each
+   loop iteration paid a ~180ms network round-trip rather than a sub-millisecond
+   local lookup. Measured on the demo seed, best of 5:
+
+   | endpoint | members | before | after |
+   |---|---|---|---|
+   | `chat/organizers/messages` | 11 | 2.15s | 0.90s |
+   | `chat/group/messages` | 8 | 1.74s | 0.83s |
+
+   Both payloads verified byte-identical before/after.
+
+**Still owed — manual browser verification.** Everything checkable without a
+browser was checked (typecheck, production build, byte-identical payloads, a
+lean-projection probe covering reactions + `replyTo`, and a two-socket probe
+proving both live delivery and the reconnect gap). These need a human at a
+browser: the Slow-3G skeleton-not-error check (3.8), the overlapping-XHR
+waterfall check (3.9), dark mode on the skeleton (3.10), the single-request
+check on first launch (4.4), and a native UZ/RU read of the three `noGroupYet`
+strings.
+
+**Known follow-up, out of scope here.** After this work the history endpoints
+still take ~0.9s, and the remaining cost is *not* in chat: it is the
+`requireAuth` → `requireCampMember` middleware chain, which runs ~4 sequential
+queries (session, user, camp, membership) before the handler starts. At ~180ms
+each on a remote DB that is the new dominant term. Batching or caching that
+chain would benefit **every** authenticated endpoint, not just chat. A native UZ/RU reader should sanity-check them before merge; the meaning to preserve is *"you have no group yet; the chat appears once an organizer adds you"* — not an error, not an apology.
