@@ -41,8 +41,13 @@ const REPLY_SNIPPET_MAX = 120
 const snippet = (s: string) =>
   s.length > REPLY_SNIPPET_MAX ? `${s.slice(0, REPLY_SNIPPET_MAX)}…` : s
 
-function toChatMessage(doc: Message, viewerId?: string): ChatMessage {
-  const createdAt = (doc as unknown as { createdAt: Date }).createdAt
+// Accepts a hydrated document OR a .lean() plain object — `history` reads lean,
+// `postMessage` passes the freshly created document. `createdAt` comes from
+// `timestamps: true`, which InferSchemaType doesn't surface, hence the explicit field.
+type MessageLike = Message & { createdAt?: Date }
+
+function toChatMessage(doc: MessageLike, viewerId?: string): ChatMessage {
+  const createdAt = doc.createdAt as Date
   return {
     id: String(doc._id),
     authorId: String(doc.authorId),
@@ -77,24 +82,34 @@ function aggregateReactions(
 }
 
 // Project a set of memberships (that carry a bound userId) into ChatMembers.
+// ONE query for every user, not one per member. This is a hot path (a group is
+// ~30 members, the organizers channel can be 100) and the DB is remote, so a
+// per-member findById costs N network round-trips, not N cheap lookups.
 async function membersFrom(
   memberships: { userId?: unknown; role: string }[],
 ): Promise<ChatMember[]> {
   const bound = memberships.filter((m) => m.userId)
-  const out: ChatMember[] = []
-  for (const m of bound) {
-    const u = await UserModel.findById(m.userId as Types.ObjectId)
+  if (!bound.length) return []
+
+  const users = await UserModel.find({ _id: { $in: bound.map((m) => m.userId) } })
+    .select('name surname photo')
+    .lean()
+  const byId = new Map(users.map((u) => [String(u._id), u]))
+
+  // Input order is preserved; a bound membership whose user row is gone degrades
+  // to an empty name, exactly as the old per-id lookup did.
+  return bound.map((m) => {
+    const u = byId.get(String(m.userId))
     const name = u ? `${u.name ?? ''} ${u.surname ?? ''}`.trim() : ''
-    out.push({
+    return {
       id: String(m.userId),
       name,
       initials: initialsOf(name),
       color: colorFor(String(m.userId)),
       photo: u?.photo ?? null,
       role: m.role,
-    })
-  }
-  return out
+    }
+  })
 }
 
 export const chatService = {
@@ -107,15 +122,18 @@ export const chatService = {
     groupId: Types.ObjectId | null,
     viewerId?: string,
   ) => {
+    // .lean() — every one of these rows is projected straight to a DTO below, so
+    // Mongoose document hydration is pure overhead.
     const docs = await MessageModel.find({ campId, channel, groupId })
       .sort({ createdAt: -1 })
       .limit(HISTORY_LIMIT)
+      .lean()
     return docs.reverse().map((d) => toChatMessage(d, viewerId))
   },
 
   // Every membership (any role) in the group room = participants + the coordinator.
   groupMembers: async (campId: Types.ObjectId, groupId: Types.ObjectId): Promise<ChatMember[]> => {
-    const rows = await MembershipModel.find({ campId, groupId })
+    const rows = await MembershipModel.find({ campId, groupId }).lean()
     return membersFrom(rows)
   },
 
@@ -124,40 +142,48 @@ export const chatService = {
     const rows = await MembershipModel.find({
       campId,
       role: { $in: ['manager', ...ORGANIZER_SUB_ROLES] },
-    })
+    }).lean()
     return membersFrom(rows)
   },
 
-  listGroupHistory: async (campId: Types.ObjectId, groupId: Types.ObjectId, viewerId?: string) => ({
-    groupId: String(groupId),
-    members: await chatService.groupMembers(campId, groupId),
-    messages: await chatService.history(campId, 'group', groupId, viewerId),
-    othersLastReadAt: viewerId
-      ? ((
-          await chatReadService.othersLastReadAt({
+  listGroupHistory: async (campId: Types.ObjectId, groupId: Types.ObjectId, viewerId?: string) => {
+    // These three are independent. Awaiting them inside an object literal would
+    // evaluate them in source order — three serial round-trips to a remote DB.
+    const [members, messages, othersRead] = await Promise.all([
+      chatService.groupMembers(campId, groupId),
+      chatService.history(campId, 'group', groupId, viewerId),
+      viewerId
+        ? chatReadService.othersLastReadAt({
             campId,
             channel: 'group',
             groupId,
             exceptUserId: new Types.ObjectId(viewerId),
           })
-        )?.toISOString() ?? null)
-      : null,
-  }),
+        : Promise.resolve(null),
+    ])
+    return {
+      groupId: String(groupId),
+      members,
+      messages,
+      othersLastReadAt: othersRead?.toISOString() ?? null,
+    }
+  },
 
-  listOrganizersHistory: async (campId: Types.ObjectId, viewerId?: string) => ({
-    members: await chatService.organizerMembers(campId),
-    messages: await chatService.history(campId, 'organizers', null, viewerId),
-    othersLastReadAt: viewerId
-      ? ((
-          await chatReadService.othersLastReadAt({
+  listOrganizersHistory: async (campId: Types.ObjectId, viewerId?: string) => {
+    const [members, messages, othersRead] = await Promise.all([
+      chatService.organizerMembers(campId),
+      chatService.history(campId, 'organizers', null, viewerId),
+      viewerId
+        ? chatReadService.othersLastReadAt({
             campId,
             channel: 'organizers',
             groupId: null,
             exceptUserId: new Types.ObjectId(viewerId),
           })
-        )?.toISOString() ?? null)
-      : null,
-  }),
+        : Promise.resolve(null),
+    ])
+    return { members, messages, othersLastReadAt: othersRead?.toISOString() ?? null }
+  },
 
   // Persist + project. The one write path both REST (none today) and the socket
   // use. Resolves an optional reply target to a room-scoped snapshot; a target
