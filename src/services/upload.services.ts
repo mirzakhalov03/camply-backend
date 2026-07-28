@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { PutObjectCommand } from '@aws-sdk/client-s3'
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { getS3Client } from '../config/s3'
 import { env } from '../config/env'
 import { HttpError } from '../middlewares/error.middleware'
-import type { PresignInput } from '../validators/upload.validators'
+import { UPLOAD_PURPOSES, type PresignInput } from '../validators/upload.validators'
 
 /*
   Presigned direct-to-S3 uploads. The browser PUTs straight to the bucket, so image
@@ -16,10 +16,25 @@ import type { PresignInput } from '../validators/upload.validators'
 // URL is a long-lived write grant to the bucket.
 const EXPIRES_IN = 60
 
+/*
+  contentType → file extension. The extension is cosmetic (S3 serves the stored
+  Content-Type), but it keeps keys readable and lets parseKey stay strict.
+  Every entry here must also appear in EXTENSIONS below, or the object becomes
+  unreadable the moment it's written.
+*/
 const EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
+  'application/pdf': 'pdf',
+  'application/msword': 'doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
 }
 
 export type PresignResult = {
@@ -59,19 +74,31 @@ export async function presign(input: PresignInput, userId: string): Promise<Pres
 }
 
 /*
-  Keys are `{purpose}/{userId}/{uuid}.{ext}`. Before persisting a client-supplied key
-  onto a resource, confirm the caller owns that prefix — otherwise anyone who learns
-  a key could attach someone else's uploaded object to their own profile.
+  ── The ONE key parser ───────────────────────────────────────────────────────────
+  Keys are `{purpose}/{userId}/{uuid}.{ext}` — the shape `presign` mints above.
 
-  Call this on EVERY write path that accepts a key from a request body.
+  Both security checks in this file run through here, deliberately: ownership (can
+  you ATTACH this key to a resource?) and download (may this key be SIGNED for
+  reading?). One parser means the two can never disagree about what a valid key is.
 
-  Accepts BOTH forms the client may hold: the bare key, and the full public URL
-  (camp.coverImage is validated as a URL, and presign returns a CDN URL whenever
-  S3_PUBLIC_BASE_URL is set). Anything that isn't one of our own keys — an
-  arbitrary external URL, say — is rejected rather than silently trusted.
+  It is strict because the download route feeds it attacker-controlled path text:
+  a permissive parser is how `..` traversal and probes at unrelated bucket prefixes
+  get through. Everything not minted by `presign` is rejected.
+
+  Accepts BOTH forms the client may hold: the bare key, and a full public URL under
+  our own base (presign returns a CDN URL whenever S3_PUBLIC_BASE_URL is set). An
+  arbitrary external URL is not one of ours, so it fails.
 */
-export function assertOwnedKey(rawKey: string, userId: string): void {
-  let key = rawKey
+const OBJECT_ID = /^[0-9a-fA-F]{24}$/
+// Kept in lockstep with EXT above — an extension we mint but don't accept here
+// would write objects that can never be read back.
+const EXTENSIONS = Object.values(EXT).join('|')
+const FILENAME = new RegExp(`^[0-9a-f-]{36}\\.(${EXTENSIONS})$`)
+
+export type ParsedKey = { key: string; purpose: string; userId: string }
+
+export function parseKey(raw: string): ParsedKey | null {
+  let key = raw
 
   // Strip our own public base, so a CDN URL reduces to the key it points at.
   const base = env.S3_PUBLIC_BASE_URL
@@ -80,11 +107,40 @@ export function assertOwnedKey(rawKey: string, userId: string): void {
   }
 
   const segments = key.split('/')
-  const [purpose, owner, ...rest] = segments
-  const wellFormed =
-    segments.length === 3 && Boolean(purpose) && Boolean(rest[0]) && !purpose.includes(':')
+  if (segments.length !== 3) return null
 
-  if (!wellFormed || owner !== userId) {
+  const [purpose, userId, filename] = segments
+  if (!UPLOAD_PURPOSES.includes(purpose as (typeof UPLOAD_PURPOSES)[number])) return null
+  if (!OBJECT_ID.test(userId)) return null
+  if (!FILENAME.test(filename)) return null
+
+  return { key, purpose, userId }
+}
+
+/*
+  Before persisting a client-supplied key onto a resource, confirm the caller owns
+  that prefix — otherwise anyone who learns a key could attach someone else's
+  uploaded object to their own profile.
+
+  Call this on EVERY write path that accepts a key from a request body.
+*/
+export function assertOwnedKey(rawKey: string, userId: string): void {
+  const parsed = parseKey(rawKey)
+  if (!parsed || parsed.userId !== userId) {
     throw new HttpError(403, 'This upload does not belong to you')
   }
+}
+
+/*
+  How long a download signature lives. Short, because the redirect that carries it
+  is itself cached for less (see the controller): the browser must never be able to
+  replay a cached redirect whose signature already expired.
+*/
+export const DOWNLOAD_EXPIRES_IN = 300
+
+/** Sign a temporary GET for one object. The bucket stays private; this is the
+ *  only way bytes leave it. */
+export async function signDownloadUrl(key: string): Promise<string> {
+  const command = new GetObjectCommand({ Bucket: env.AWS_S3_BUCKET!, Key: key })
+  return getSignedUrl(getS3Client(), command, { expiresIn: DOWNLOAD_EXPIRES_IN })
 }

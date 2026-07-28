@@ -4,6 +4,7 @@ import { MembershipModel, ORGANIZER_SUB_ROLES } from '../models/membership.model
 import { UserModel } from '../models/user.model'
 import { initialsOf, colorFor } from '../utils/avatar'
 import { chatReadService } from './chatRead.services'
+import { assertOwnedKey } from './upload.services'
 
 export const HISTORY_LIMIT = 50
 
@@ -15,11 +16,22 @@ export type MessageReaction = { emoji: string; count: number; mine: boolean }
 // Denormalized snapshot of a replied-to message (viewer-neutral, deletion-proof).
 export type ReplySnapshot = { messageId: string; authorName: string; text: string }
 
+/** An uploaded file on a message. `key` is an S3 key — the client resolves it
+ *  through /api/uploads at render time, exactly like an avatar. */
+export type ChatAttachment = {
+  key: string
+  name: string
+  size: number
+  mime: string
+}
+
 export type ChatMessage = {
   id: string
   authorId: string
-  kind: 'text'
-  text: string
+  /** Derived from the attachment's mime — see toChatMessage. */
+  kind: 'text' | 'image' | 'file'
+  text?: string
+  attachment?: ChatAttachment
   time: string // HH:MM
   createdAt: string // ISO — the client can re-derive `time` and ordering
   reactions: MessageReaction[]
@@ -50,11 +62,19 @@ type MessageLike = Message & { createdAt?: Date }
 
 function toChatMessage(doc: MessageLike, viewerId?: string): ChatMessage {
   const createdAt = doc.createdAt as Date
+  const a = doc.attachment
   return {
     id: String(doc._id),
     authorId: String(doc.authorId),
-    kind: 'text',
-    text: doc.text,
+    /*
+      `kind` is DERIVED from the stored mime, never stored itself — one fact, one
+      place. The client switches its bubble on this instead of re-parsing mime types.
+    */
+    kind: a ? (a.mime.startsWith('image/') ? 'image' : 'file') : 'text',
+    text: doc.text || undefined,
+    // The KEY is sent, not a URL: it's resolved at render (resolveUploadUrl), the
+    // same way avatars are, so the signed-URL detail stays out of the payload.
+    attachment: a ? { key: a.key, name: a.name, size: a.size, mime: a.mime } : undefined,
     time: hhmm(createdAt),
     createdAt: createdAt.toISOString(),
     reactions: aggregateReactions(doc.reactions ?? [], viewerId),
@@ -196,11 +216,19 @@ export const chatService = {
     channel: MessageChannel
     groupId: Types.ObjectId | null
     authorId: Types.ObjectId
-    text: string
+    text?: string
+    attachment?: ChatAttachment
     replyToId?: Types.ObjectId
     clientMsgId?: string
   }): Promise<ChatMessage> => {
     const groupId = input.channel === 'group' ? input.groupId : null
+
+    /*
+      An attachment key is client-supplied, so it gets the same guard every other
+      key-accepting write path carries — otherwise anyone who learned a key could
+      post someone else's uploaded file into a room they share.
+    */
+    if (input.attachment) assertOwnedKey(input.attachment.key, String(input.authorId))
 
     // Idempotency: the outbox retries a send whose echo it never saw. Same shape
     // as campService.createFull's clientRequestId dedupe. Checked BEFORE the
@@ -224,7 +252,10 @@ export const chatService = {
       if (orig) {
         const author = await UserModel.findById(orig.authorId)
         const authorName = author ? `${author.name ?? ''} ${author.surname ?? ''}`.trim() : ''
-        replyTo = { messageId: orig._id, authorName, text: snippet(orig.text) }
+        // An attachment-only original has no text to quote; name the file instead,
+        // so the reply preview isn't a blank line.
+        const quoted = orig.text || orig.attachment?.name || ''
+        replyTo = { messageId: orig._id, authorName, text: snippet(quoted) }
       }
     }
 
@@ -235,6 +266,7 @@ export const chatService = {
         groupId,
         authorId: input.authorId,
         text: input.text,
+        attachment: input.attachment ?? null,
         replyTo,
         clientMsgId: input.clientMsgId,
       })

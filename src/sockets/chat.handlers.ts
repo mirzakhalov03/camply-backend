@@ -10,6 +10,7 @@ import {
 } from '../validators/chat.validators'
 import { chatReadService } from '../services/chatRead.services'
 import { notify } from '../services/notify.service'
+import { HttpError } from '../middlewares/error.middleware'
 
 const groupRoom = (campId: string, groupId: string) => `group:${campId}:${groupId}`
 const orgRoom = (campId: string) => `organizers:${campId}`
@@ -26,7 +27,45 @@ async function onlineUserIds(io: Server, room: string): Promise<string[]> {
 export function registerChatHandlers(io: Server, socket: Socket): void {
   const user = socket.data.user
 
-  socket.on('chat:connectCamp', async ({ campId }: { campId: string }) => {
+  /*
+    Register an ASYNC socket handler safely.
+
+    Socket.IO does not await handlers, so a rejected promise inside one becomes an
+    unhandled rejection — which, on modern Node, TERMINATES THE PROCESS. There is no
+    express-style error middleware on this path: the whole API goes down.
+
+    That is not theoretical. `chatService.postMessage` calls `assertOwnedKey`, which
+    throws HttpError(403) on an attachment key the sender doesn't own — so any client
+    could crash the backend with one crafted `chat:send`. Caught here once, for every
+    handler, rather than relying on each to remember its own try/catch.
+
+    An HttpError is a real, expected client-facing refusal, so it becomes a
+    `chat:error` the sender can act on; anything else is a genuine bug — logged
+    server-side, reported to the client as a generic failure.
+  */
+  const on = <T>(event: string, handler: (payload: T) => Promise<void>) => {
+    socket.on(event, (payload: T) => {
+      void handler(payload).catch((err: unknown) => {
+        const clientMsgId = (payload as { clientMsgId?: unknown } | null)?.clientMsgId
+        if (err instanceof HttpError) {
+          socket.emit('chat:error', {
+            code: err.status === 403 ? 'forbidden' : 'invalid',
+            message: err.message,
+            clientMsgId: typeof clientMsgId === 'string' ? clientMsgId : undefined,
+          })
+          return
+        }
+        console.error(`[socket] ${event} failed:`, err)
+        socket.emit('chat:error', {
+          code: 'server_error',
+          message: 'Something went wrong',
+          clientMsgId: typeof clientMsgId === 'string' ? clientMsgId : undefined,
+        })
+      })
+    })
+  }
+
+  on('chat:connectCamp', async ({ campId }: { campId: string }) => {
     if (!Types.ObjectId.isValid(campId)) return
     const camp = await CampModel.findById(campId)
     if (!camp) return
@@ -86,7 +125,7 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
     }
   })
 
-  socket.on('chat:send', async (payload: unknown) => {
+  on('chat:send', async (payload: unknown) => {
     const parsed = sendMessageSchema.safeParse(payload)
     // Every chat:error inside chat:send echoes clientMsgId so the client's outbox
     // can attribute the failure to one queued message. Read off the RAW payload
@@ -101,7 +140,17 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
       })
       return
     }
-    const { campId, channel, text, replyToId, clientMsgId } = parsed.data
+    const { campId, channel, text, attachment, replyToId, clientMsgId } = parsed.data
+
+    /*
+      What the PUSH notification says. An attachment-only message has no text, and
+      pushing an empty body would surface as a blank notification — so fall back to
+      a filename, prefixed to hint at the kind. The bubble itself still renders from
+      `attachment`; this string is only ever notification copy.
+    */
+    const pushText =
+      text ||
+      (attachment ? `${attachment.mime.startsWith('image/') ? '📷' : '📎'} ${attachment.name}` : '')
     const entitlement = socket.data.byCamp?.get(campId)
     if (!entitlement) {
       socket.emit('chat:error', {
@@ -127,6 +176,7 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
         groupId: null,
         authorId: new Types.ObjectId(user.id),
         text,
+        attachment,
         replyToId: replyToId ? new Types.ObjectId(replyToId) : undefined,
         clientMsgId,
       })
@@ -140,7 +190,7 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
         groupId: null,
         authorId: user.id,
         authorName: orgMembers.find((m) => m.id === user.id)?.name || 'Camply',
-        text,
+        text: pushText,
         roomMemberIds: orgMembers.map((m) => m.id),
         connectedUserIds: orgConnected,
       })
@@ -163,6 +213,7 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
       groupId: new Types.ObjectId(groupId),
       authorId: new Types.ObjectId(user.id),
       text,
+      attachment,
       replyToId: replyToId ? new Types.ObjectId(replyToId) : undefined,
       clientMsgId,
     })
@@ -179,13 +230,13 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
       groupId,
       authorId: user.id,
       authorName: grpMembers.find((m) => m.id === user.id)?.name || 'Camply',
-      text,
+      text: pushText,
       roomMemberIds: grpMembers.map((m) => m.id),
       connectedUserIds: grpConnected,
     })
   })
 
-  socket.on('chat:react', async (payload: unknown) => {
+  on('chat:react', async (payload: unknown) => {
     const parsed = reactMessageSchema.safeParse(payload)
     if (!parsed.success) return
     const { campId, channel, messageId, emoji } = parsed.data
@@ -212,7 +263,7 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
     io.to(room).emit('chat:reaction', { channel, groupId, messageId, reactions })
   })
 
-  socket.on('chat:read', async (payload: unknown) => {
+  on('chat:read', async (payload: unknown) => {
     const parsed = readMessagesSchema.safeParse(payload)
     if (!parsed.success) return
     const { campId, channel } = parsed.data
@@ -247,7 +298,7 @@ export function registerChatHandlers(io: Server, socket: Socket): void {
 
   // On disconnect, socket.io auto-leaves rooms; re-emit presence for each room the
   // socket was in so remaining members see the drop.
-  socket.on('disconnect', async () => {
+  on('disconnect', async () => {
     const byCamp = socket.data.byCamp
     if (!byCamp) return
     for (const [campId, e] of byCamp) {

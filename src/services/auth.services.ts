@@ -126,4 +126,21 @@ export const authService = {
     await user.save()
     return toPublicUser(user)
   },
+
+  /*
+    Set (or clear) the avatar on its own, with no profile prerequisites — see
+    setPhotoSchema for why this isn't part of completeProfile.
+
+    Same ownership guard every key-accepting write path carries: without it,
+    anyone who learned a key could pin someone else's upload onto their profile.
+  */
+  setPhoto: async (
+    user: HydratedDocument<User>,
+    input: { photo: string | null },
+  ): Promise<PublicUser> => {
+    if (input.photo) assertOwnedKey(input.photo, String(user._id))
+    user.photo = input.photo
+    await user.save()
+    return toPublicUser(user)
+  },
 }

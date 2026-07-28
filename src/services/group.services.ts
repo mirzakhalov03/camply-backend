@@ -5,6 +5,7 @@ import { GroupPointsModel } from '../models/leaderboard.model'
 import { UserModel } from '../models/user.model'
 import { initialsOf, colorFor } from '../utils/avatar'
 import { HttpError } from '../middlewares/error.middleware'
+import { assertOwnedKey } from './upload.services'
 
 export async function toCampGroupDetail(group: Group) {
   const memberships = await MembershipModel.find({ groupId: group._id, role: 'participant' })
@@ -27,6 +28,10 @@ export async function toCampGroupDetail(group: Group) {
     id: String(group._id),
     name: group.name,
     color: group.color,
+    // The group's identity photo (an upload key). toMyGroup already returned this;
+    // without it here the organizer's own Groups tab — and the PATCH response that
+    // sets it — would report a photo they just saved as absent.
+    photo: group.photo ?? null,
     memberCount: members.length,
     leaderName: leader?.name ?? null,
     members,
@@ -90,10 +95,32 @@ export const groupService = {
     await GroupPointsModel.create({ campId, groupId: group._id })
     return toCampGroupDetail(group)
   },
-  update: async (gid: string, patch: Record<string, unknown>) => {
+  update: async (gid: string, patch: Record<string, unknown>, actorId: string) => {
+    // `photo` is a client-supplied upload reference — same guard camp.coverImage
+    // carries. Without it, anyone who learns a key could pin someone else's
+    // uploaded image onto their group.
+    if (typeof patch.photo === 'string') assertOwnedKey(patch.photo, actorId)
+
     const g = await GroupModel.findByIdAndUpdate(gid, { $set: patch }, { new: true })
     if (!g) throw new HttpError(404, 'Group not found')
     return toCampGroupDetail(g)
+  },
+  /*
+    The MEMBER-level photo write, behind PATCH /camps/:id/my-group/photo.
+
+    `groupId` is the caller's own membership.groupId — never a request parameter —
+    so "which group" is decided by who you are, not by what you send. That's what
+    lets this skip requireCampManager without opening any other group up.
+
+    Still assertOwnedKey: the key is client-supplied, and without this check anyone
+    who learned another user's key could pin their upload onto the group.
+  */
+  setMyGroupPhoto: async (groupId: Types.ObjectId, photo: string | null, actorId: string) => {
+    if (photo) assertOwnedKey(photo, actorId)
+
+    const g = await GroupModel.findByIdAndUpdate(groupId, { $set: { photo } }, { new: true })
+    if (!g) throw new HttpError(404, 'Group not found')
+    return toMyGroup(g)
   },
   remove: async (gid: string) => {
     await MembershipModel.updateMany({ groupId: gid }, { $set: { groupId: null } })

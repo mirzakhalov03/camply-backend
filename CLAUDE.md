@@ -159,6 +159,15 @@ participant camp request 400'd.
   falls back to `m.phone` as a display name, which is correct for the organizer's
   roster and a privacy leak in a card the whole group sees. Returns initials + a
   color only. `{ group: null }` with **200** when unassigned (a valid state).
+- **`PATCH /camps/:id/my-group/photo`** (member-level, 2026-07-28) — the group's
+  identity photo, writable by **any member of that group**, deliberately outside
+  `requireCampManager`. It is safe at member tier because it takes **no group id**:
+  the target is the caller's own `membership.groupId`, exactly like `getMyGroup`, so
+  there is no parameter to aim at another group. Body is `{ photo }` only
+  (`myGroupPhotoSchema`) — name/color/leadership stay manager-tier, so this can't be
+  widened into a group takeover by adding a field. **409, not 403**, when the caller
+  has no group: they aren't forbidden, there's just nothing to write to. Managers
+  keep their own `PATCH /organizer/camps/:id/groups/:gid`.
 - **Color conventions differ on purpose:** `members[].color` is a palette *token*
   (client resolves to `var(--color-*)` so dark mode works); `group.color` is
   whatever the organizer picked, which in existing data is raw **hex** despite
@@ -340,6 +349,82 @@ batch — but on the shipped Socket.IO transport, for the chat slice.
   leaderboard push remain a follow-up that plugs into the same `notify.service`.
 
 Design + plan: `docs/superpowers/{specs,plans}/2026-07-23-chat-reactions-receipts-push*.md`.
+
+## Image uploads (`/uploads`, `config/s3`, `upload.services`)
+
+Direct-to-S3 writes, signed-redirect reads. **The bucket is private** — nothing is
+publicly readable, by design (participants are often minors; root `CLAUDE.md` makes
+privacy a product guarantee).
+
+- **Write:** `POST /uploads/presign` → `{uploadUrl, key, publicUrl, expiresIn}`. The
+  browser PUTs the bytes straight to S3, so image data never passes through Express.
+  `ContentLength` is **signed**, which is what makes the 5 MB ceiling a real
+  server-side guarantee rather than a client-side suggestion.
+- **Read:** `GET /uploads/*key` (`requireAuth`) → **302** to a presigned GET (300s),
+  with `Cache-Control: private, max-age=240` — deliberately shorter than the
+  signature, so a cached redirect can never point at an expired URL. We redirect
+  rather than proxy so S3, not our process, pays for the transfer.
+  **The wildcard must stay named (`/*key`)** — Express 5 removed bare `*` and throws
+  when the router is BUILT, so getting this wrong takes the API down at boot.
+- **Authorization is `requireAuth` + an unguessable key**, not per-object ownership.
+  Keys are `randomUUID()` and only handed out by endpoints that already scope their
+  responses. Stops anonymous scraping/indexing; does not stop a logged-in user who
+  already knows a key. Documented limitation, revisit if uploads get more sensitive.
+- **`parseKey` is the ONE key parser** and backs both checks. Keys are strictly
+  `{purpose}/{24-hex userId}/{uuid}.{jpg|png|webp}`; anything else is refused before
+  any AWS call, which is what makes `..` traversal a non-event.
+- **`assertOwnedKey(ref, userId)` on EVERY write path that accepts a key from a
+  request body.** Currently `user.photo` (`auth.services`), `camp.coverImage`
+  (`camp.services` create + update), `group.photo` (**both** `group.services.update`
+  and `group.services.setMyGroupPhoto`). Skipping it lets anyone who learns a key pin
+  someone else's image onto their own resource.
+- **Never validate an upload ref as `z.string().url()`** — use `uploadRefSchema`.
+  `presign` returns a BARE KEY whenever `S3_PUBLIC_BASE_URL` is unset, so `.url()`
+  400s a perfectly valid upload before it ever reaches the ownership check. (This was
+  a live bug on `coverImage`.) The loose schema is safe precisely because
+  `assertOwnedKey` is strictly stronger than any URL check — it even rejects external
+  URLs.
+- **Env:** `AWS_REGION`, `AWS_S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+  (all-or-nothing, enforced in `env.ts`). Unconfigured is an operational state, not a
+  crash: `isStorageConfigured()` → **503**, so the API still boots without a bucket.
+  `S3_PUBLIC_BASE_URL` is **optional** and currently unset; setting it to a CloudFront
+  origin is the whole CDN migration — `parseKey` already strips it.
+- **Projections owe the field.** A group photo that persists but isn't in
+  `toCampGroupDetail` reads to the client as "not saved" (hit in practice).
+- **`PATCH /auth/me/photo` (`setPhotoSchema`) is the avatar write — NOT
+  `PATCH /auth/me`.** `completeProfileSchema` requires name + surname + cityId + age,
+  so saving a photo through it **400s for anyone without a city** — e.g. an organizer,
+  who gets name/surname from their invite email and may never set one. That's a real
+  bug that shipped: the upload reached S3 and the key was silently never persisted.
+  Any future "just update one profile field" needs its own endpoint too.
+- **Browser uploads need bucket CORS** (`docs/aws-s3-cors.{json,md}`). `AllowedOrigins`
+  matches EXACTLY — `localhost` ≠ `127.0.0.1` ≠ the LAN IP a phone uses. **curl does
+  not enforce CORS**, so a passing curl test proves nothing about the browser.
+- **Chat attachments** use purpose `chat`, the only purpose that accepts **documents**
+  (PDF/Office/txt/csv, ≤15 MB; images stay ≤5 MB). `image/svg+xml` is deliberately
+  NOT allowed — SVG is a script container and these are served back to browsers.
+  Per-purpose and per-type rules live in `presignSchema.superRefine`.
+- **`EXT` and `parseKey`'s `FILENAME` regex must stay in lockstep** (the regex is
+  built from `EXT`'s values). An extension we mint but don't accept back would write
+  objects that can never be read.
+
+## Socket handlers must never throw (learned the hard way)
+
+**Socket.IO does not await handlers.** A rejected promise inside `socket.on(...)` is
+an unhandled rejection, which on modern Node **terminates the process** — there is no
+Express error middleware on this path, so the entire API goes down.
+
+This is not hypothetical: `chatService.postMessage` calls `assertOwnedKey`, which
+throws `HttpError(403)` for an attachment key the sender doesn't own. Before the fix,
+**any client could crash the backend with one crafted `chat:send`.**
+
+`sockets/chat.handlers.ts` therefore registers every async handler through a local
+**`on(event, handler)`** wrapper that catches: an `HttpError` becomes a `chat:error`
+(`forbidden`/`invalid`) the sender can act on, anything else is logged and reported as
+`server_error`. **Register new socket events with `on(...)`, never `socket.on(...)`
+directly**, and assume any service you call may throw.
+
+Design + plan: `docs/superpowers/{specs,plans}/2026-07-28-image-uploads-wiring*.md`.
 
 ## Deploy caveat — cross-origin cookies
 
