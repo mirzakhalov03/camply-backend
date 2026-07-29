@@ -1,5 +1,6 @@
 import { z } from '../config/zod'
 import { ORGANIZER_SUB_ROLES } from '../models/membership.model'
+import { uploadRefSchema } from './upload.validators'
 
 // 9 national digits — matches the frontend's PHONE_LENGTH.
 const phone = z.string().regex(/^\d{9}$/, 'Phone must be 9 digits')
@@ -30,6 +31,22 @@ export const setLanguageSchema = z.object({
   language: z.enum(['uz', 'ru', 'en']),
 })
 
+/*
+  The avatar on its OWN endpoint, deliberately separate from completeProfileSchema.
+
+  Changing your photo is not "completing your profile": completeProfile requires
+  name + surname + cityId + age, so every caller had to gate the photo save behind
+  `if (!p.city) return`. An organizer — who gets name/surname from their invite and
+  may never have set a city — could therefore upload a photo that was silently
+  never persisted. One field, no prerequisites.
+
+  `null` clears the avatar; a string is an upload ref checked by assertOwnedKey.
+*/
+export const setPhotoSchema = z.object({
+  photo: uploadRefSchema.nullable(),
+})
+
 export type LoginInput = z.infer<typeof loginSchema>
 export type CompleteProfileInput = z.infer<typeof completeProfileSchema>
 export type SetLanguageInput = z.infer<typeof setLanguageSchema>
+export type SetPhotoInput = z.infer<typeof setPhotoSchema>

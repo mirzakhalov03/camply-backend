@@ -4,6 +4,7 @@ import {
   loginSchema,
   completeProfileSchema,
   setLanguageSchema,
+  setPhotoSchema,
 } from '../validators/auth.validators'
 import {
   createOrganizerSchema,
@@ -21,7 +22,12 @@ import {
   addRosterSchema,
   updateRosterSchema,
 } from '../validators/roster.validators'
-import { groupIdParams, createGroupSchema, updateGroupSchema } from '../validators/group.validators'
+import {
+  groupIdParams,
+  createGroupSchema,
+  updateGroupSchema,
+  myGroupPhotoSchema,
+} from '../validators/group.validators'
 import {
   activityIdParams,
   createActivitySchema,
@@ -612,7 +618,7 @@ registry.registerPath({
   method: 'post',
   path: '/api/uploads/presign',
   tags: ['Uploads'],
-  summary: 'Mint a presigned S3 PUT for an image (≤5 MB)',
+  summary: 'Mint a presigned S3 PUT (images ≤5 MB; chat documents ≤15 MB)',
   request: { body: { content: { 'application/json': { schema: PresignInputSchema } } } },
   responses: {
     200: {
@@ -628,7 +634,33 @@ registry.registerPath({
         },
       },
     },
-    400: { description: 'Over 5 MB, or an unsupported content type' },
+    400: {
+      description: 'Over the size limit, unsupported type, or a document on a non-chat purpose',
+    },
+    503: { description: 'Storage is not configured' },
+  },
+})
+registry.registerPath({
+  method: 'get',
+  path: '/api/uploads/{key}',
+  tags: ['Uploads'],
+  summary: 'Redirect to a short-lived signed URL for an uploaded image',
+  description:
+    'The bucket is private, so this is how images are read back — point an <img src> ' +
+    'straight at it. Any authenticated user may fetch a key they know; keys are ' +
+    'random UUIDs handed out only by endpoints that already scope their responses.',
+  request: {
+    params: z.object({
+      key: z.string().openapi({
+        example: 'avatar/665f…/9f3c….jpg',
+        description: '{purpose}/{userId}/{uuid}.{ext}',
+      }),
+    }),
+  },
+  responses: {
+    302: { description: 'Location: a presigned S3 GET, valid 300s' },
+    400: { description: 'Malformed key — not one this API minted' },
+    401: { description: 'Not signed in' },
     503: { description: 'Storage is not configured' },
   },
 })
@@ -694,6 +726,29 @@ registry.registerPath({
     },
     403: { description: 'Not a member of this camp' },
     404: { description: 'Camp not found' },
+  },
+})
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/camps/{id}/my-group/photo',
+  tags: ['Camps'],
+  summary: "Set the photo of the caller's own group",
+  description:
+    "MEMBER-level write — any member of the group may set its identity photo, the way a group chat's picture works. The target group is the caller's own `membership.groupId`, never a request parameter, so this cannot reach another group. `photo` is an upload key from `POST /uploads/presign` (ownership-checked), or `null` to clear it back to the emoji tile.",
+  request: {
+    params: campIdParam,
+    body: { content: { 'application/json': { schema: myGroupPhotoSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'The updated group',
+      content: { 'application/json': { schema: z.object({ group: MyGroupSchema }) } },
+    },
+    400: { description: 'Invalid body' },
+    403: { description: 'Not a member of this camp, or the key belongs to another user' },
+    404: { description: 'Camp not found' },
+    409: { description: 'The caller is not in a group yet' },
   },
 })
 
@@ -1272,6 +1327,23 @@ registry.registerPath({
   responses: {
     200: { description: 'Updated user' },
     401: { description: 'Not authenticated' },
+  },
+})
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/auth/me/photo',
+  tags: ['Auth'],
+  summary: "Set or clear the caller's avatar (no profile prerequisites)",
+  description:
+    'Takes an upload KEY from POST /uploads/presign, or null to clear. Separate from ' +
+    'PATCH /auth/me because that one requires name+surname+city+age, which an ' +
+    'organizer invited by email may not have.',
+  request: { body: { content: { 'application/json': { schema: setPhotoSchema } } } },
+  responses: {
+    200: { description: 'Updated user' },
+    401: { description: 'Not authenticated' },
+    403: { description: 'That upload key belongs to someone else' },
   },
 })
 

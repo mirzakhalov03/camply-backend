@@ -1,4 +1,5 @@
 import { z } from '../config/zod'
+import { uploadRefSchema } from './upload.validators'
 
 export const campIdParam = z.object({
   id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid id'),
@@ -12,7 +13,9 @@ const campCoreSchema = z.object({
   endsAt: z.string().datetime(),
   capacity: z.number().int().nonnegative().optional(),
   languages: z.array(z.enum(['en', 'uz', 'ru'])).optional(),
-  coverImage: z.string().url().nullable().optional(),
+  // A presign KEY (or a URL under our own public base) — not an arbitrary URL.
+  // campService.create/update calls assertOwnedKey on it.
+  coverImage: uploadRefSchema.nullable().optional(),
 })
 
 // Create accepts the optional batch payload (groups + participants) and a status.

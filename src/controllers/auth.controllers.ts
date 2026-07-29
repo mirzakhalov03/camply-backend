@@ -36,3 +36,8 @@ export const setLanguage: RequestHandler = async (req, res) => {
   const user = await authService.setLanguage(req.auth!.user, req.body)
   res.json(user)
 }
+
+export const setPhoto: RequestHandler = async (req, res) => {
+  const user = await authService.setPhoto(req.auth!.user, req.body)
+  res.json(user)
+}

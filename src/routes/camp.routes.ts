@@ -4,7 +4,8 @@ import { requireAuth, requireRole } from '../middlewares/auth.middleware'
 import { requireCampMember, requireCampManager } from '../middlewares/campScope.middleware'
 import { campIdParam, createCampSchema, updateCampSchema } from '../validators/camp.validators'
 import * as c from '../controllers/camp.controllers'
-import { getMyGroup } from '../controllers/group.controllers'
+import { getMyGroup, setMyGroupPhoto } from '../controllers/group.controllers'
+import { myGroupPhotoSchema } from '../validators/group.validators'
 import rosterRouter from './roster.routes'
 import groupRouter from './group.routes'
 import scheduleRouter from './schedule.routes'
@@ -78,6 +79,18 @@ campRouter.get(
   validate({ params: campIdParam }),
   requireCampMember,
   getMyGroup,
+)
+/*
+  The group's identity photo, written by any MEMBER of that group — deliberately not
+  under requireCampManager. The target group is the caller's own membership.groupId,
+  so member-tier here cannot reach any other group (see setMyGroupPhoto).
+*/
+campRouter.patch(
+  '/:id/my-group/photo',
+  requireAuth,
+  validate({ params: campIdParam, body: myGroupPhotoSchema }),
+  requireCampMember,
+  setMyGroupPhoto,
 )
 campRouter.get(
   '/:id/my-role',

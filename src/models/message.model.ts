@@ -10,7 +10,34 @@ const messageSchema = new Schema(
     // Required + non-null iff channel === 'group'; null for the organizers room.
     groupId: { type: Schema.Types.ObjectId, ref: 'Group', default: null },
     authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    text: { type: String, required: true, trim: true, minlength: 1, maxlength: 2000 },
+    /*
+      Optional since attachments landed: a photo with no caption is a valid message.
+      "At least one of text/attachment" is enforced in chat.validators (a schema-level
+      `required` can't express an either-or), so this is not a weakened guarantee.
+    */
+    text: { type: String, required: false, trim: true, maxlength: 2000 },
+    /*
+      An uploaded image or document, stored as the S3 KEY plus the metadata needed to
+      render it without a second lookup: the original filename (S3 keys are UUIDs, so
+      the name only exists if we keep it), the byte size (shown on file bubbles), and
+      the mime (decides image-vs-file rendering).
+
+      `mime` is what the CLIENT declared at presign time and S3 signed. It's fine for
+      choosing a bubble; it is not proof of file contents, so never let it drive
+      anything security-sensitive.
+    */
+    attachment: {
+      type: new Schema(
+        {
+          key: { type: String, required: true },
+          name: { type: String, required: true, maxlength: 260 },
+          size: { type: Number, required: true },
+          mime: { type: String, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
     // Embedded reactions — bounded per message (a handful of emojis). One {userId,
     // emoji} pair per reactor per emoji; toggling that pair removes it. No _id on subdocs.
     reactions: {
