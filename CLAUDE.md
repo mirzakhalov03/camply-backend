@@ -23,8 +23,15 @@ touching auth or permissions.** This file covers the backend stack and conventio
   `SEED_ORG_USERNAME` / `SEED_ORG_PASSWORD` (dev defaults `admin` / `1234`). The
   org is keyed by **username** and has no phone.
 
-No test runner is configured (project preference) — verify manually with curl or
-`/api/docs`.
+- `npm test` / `npm run test:run` — **Vitest**. Part of `validate`, so tests run on
+  every commit.
+
+**Tests cover pure logic only** — geometry (`utils/geo.ts`), cross-field invariants
+(`assertKindRadius`) — the rules a hand-check can't confirm and a refactor can quietly
+invert. Anything touching the DB, a socket, or a real request is still verified with
+**curl and `/api/docs`**: automating those needs `mongodb-memory-server` or a scratch
+database, which is its own infra decision. Don't let a green suite stand in for the
+end-to-end privacy checks.
 
 ## Stack
 
