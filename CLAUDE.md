@@ -415,6 +415,58 @@ privacy a product guarantee).
   built from `EXT`'s values). An extension we mint but don't accept back would write
   objects that can never be read.
 
+## Camp map — geometry + the location pipeline
+
+Manager-authored geography plus live, privacy-scoped participant positions. Design:
+`../docs/superpowers/specs/2026-07-29-camp-map-design.md` (read §5 before touching
+anything here).
+
+- **Two models, deliberately different shapes.** `Place` is camp geography — a `kind`
+  discriminator over `zone` (circular area, owns `radiusM`) and `landmark` (a point,
+  `radiusM` must be null). `Location` is a person's **current** position.
+- **`Location` is UPSERTED, never inserted** — one document per `{campId,userId}`,
+  unique-indexed. That upsert is the entire difference between "current position" and
+  "movement track of a minor". There is no history collection and there must not be
+  one; a 24h TTL index on `reportedAt` means even the current value expires by itself.
+- **Sharing off ⇒ coordinates are DISCARDED, not hidden.** When
+  `Membership.shareLocation === false`, `locationService.report` still evaluates bounds
+  and then writes `lat`, `lon` and `zoneId` as **null**. Only `outOfBounds` survives.
+  This is what makes the toggle's copy ("we stop storing where you are; we only keep
+  whether you've left the camp") literally true. `setSharing(false)` also scrubs the
+  existing row immediately — waiting for the next report would leave a last-known
+  position readable for a minute after the user asked us to stop.
+- **Zone and bounds are resolved at WRITE time**, never at read. Occupancy counts and
+  the safety lens become plain indexed queries with no geometry per reader — and,
+  critically, they can be answered **without coordinates**, which is the only reason
+  the discard rule above is possible. Resolve at read time and the promise collapses
+  into "we keep it but hide it".
+- **Rooms are server-derived** (`sockets/map.handlers.ts`), never client-named:
+  `map:{campId}:group:{groupId}` and `map:{campId}:staff`. This has to be room
+  membership rather than a filter anywhere else, because the same person's position
+  must be visible and invisible **simultaneously** to different viewers. A controller-
+  or component-level filter cannot express that; who is standing in which room at
+  broadcast time can. Sharing-off emits `map:hidden` (no coordinates) to the staff room
+  only, and only when `outOfBounds` actually **flips** — not every report.
+- **An unassigned participant sees only themselves.** `pinsFor` narrows to `userId`
+  when the viewer has no `groupId`; matching `groupId: null` would pool every ungrouped
+  participant into a pseudo-group. "No group" is not a group.
+- **The out-of-bounds rules are product decisions, not tuning knobs** (`utils/geo.ts`,
+  unit-tested). `ACCURACY_GATE_M = 50`: a worse fix returns the **previous** state
+  untouched — not "inside", or a bad GPS reading would silently clear a real alert.
+  `OB_STRIKES = 2`: two consecutive qualifying fixes before flagging. `HYSTERESIS_M = 25`:
+  flag past `radius + 25`, clear only inside the true radius, so someone standing on the
+  line cannot strobe. A lens that cries wolf gets muted, and a muted lens is worse than
+  none. **A camp with `boundary: null` never flags** — no geometry, no false alarm.
+- **`MIN_REPORT_INTERVAL_MS = 10_000`**, per-socket and in-memory: reports arriving
+  sooner are dropped silently. The client throttles too (60s idle / 15s on a map
+  screen), but a client-side throttle is not a guarantee.
+- **Map socket handlers use the `on(...)` wrapper**, like chat — see the section below.
+  `locationService.report` throws `HttpError(403)` outside camp hours and `404` on a
+  missing camp; unwrapped, that is a one-message API kill.
+- **Camp hours = the whole camp duration** (`startsAt`→`endsAt`), enforced server-side.
+  There is no daily window; adding one means an `activeFrom`/`activeUntil` pair on
+  `Camp` and nothing else changes.
+
 ## Socket handlers must never throw (learned the hard way)
 
 **Socket.IO does not await handlers.** A rejected promise inside `socket.on(...)` is

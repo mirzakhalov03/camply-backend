@@ -35,6 +35,7 @@ import {
   boundarySchema,
   PLACE_ICONS,
 } from '../validators/place.validators'
+import { sharingSchema } from '../validators/location.validators'
 import {
   activityIdParams,
   createActivitySchema,
@@ -1027,6 +1028,79 @@ registry.registerPath({
     },
     403: { description: 'Not a manager of this camp' },
     404: { description: 'Camp not found' },
+  },
+})
+
+// ── Camp map: live pins + sharing ───────────────────────────────────────
+const PinSchema = registry.register(
+  'MapPin',
+  z.object({
+    userId: z.string(),
+    name: z.string(),
+    initials: z.string(),
+    color: z.string(),
+    groupId: z.string().nullable(),
+    lat: z.number(),
+    lon: z.number(),
+    zoneId: z.string().nullable(),
+    outOfBounds: z.boolean(),
+    at: z.string(),
+  }),
+)
+const HiddenPinSchema = registry.register(
+  'MapHiddenPin',
+  z.object({
+    userId: z.string(),
+    name: z.string(),
+    initials: z.string(),
+    outOfBounds: z.boolean(),
+  }),
+)
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}/map/pins',
+  tags: ['Camp map'],
+  summary: 'Live pins, privacy-scoped to the caller',
+  description:
+    'A participant receives their own group only (and only themselves if unassigned). Staff receive the whole camp plus `hidden[]` — sharing-off participants who are out of bounds, with NO coordinates.',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Scoped pins',
+      content: {
+        'application/json': {
+          schema: z.object({
+            pins: z.array(PinSchema),
+            hidden: z.array(HiddenPinSchema).optional(),
+            sharing: z.boolean(),
+          }),
+        },
+      },
+    },
+    403: { description: 'Not a member of this camp' },
+  },
+})
+registry.registerPath({
+  method: 'patch',
+  path: '/api/camps/{id}/my-location-sharing',
+  tags: ['Camp map'],
+  summary: "Toggle the caller's own location sharing",
+  description:
+    'Disabling scrubs stored coordinates immediately and stops broadcasting the pin. The server keeps evaluating out-of-bounds so the safety lens has no blind spot.',
+  request: {
+    params: campIdParam,
+    body: {
+      content: {
+        'application/json': { schema: registry.register('SetSharingInput', sharingSchema) },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'New sharing state',
+      content: { 'application/json': { schema: z.object({ sharing: z.boolean() }) } },
+    },
+    403: { description: 'Not a member of this camp' },
   },
 })
 
