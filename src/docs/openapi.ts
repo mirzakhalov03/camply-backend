@@ -765,6 +765,8 @@ const RosterParticipantSchema = registry.register(
   'RosterParticipant',
   z.object({
     id: z.string(),
+    // The bound user id — null for a pending invite. Distinct from `id` (membership).
+    userId: z.string().nullable(),
     name: z.string(),
     initials: z.string(),
     avatarColor: z.string(),

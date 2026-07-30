@@ -15,6 +15,13 @@ export async function toRosterParticipant(m: Membership) {
   const name = user ? `${user.name} ${user.surname}`.trim() : ''
   return {
     id: String(m._id),
+    /*
+      The bound USER id, distinct from `id` (the membership). The live map keys pins
+      by userId, so "See on map" needs this to have anything to aim at. Null for a
+      pending invite — who by definition has never reported a position, which is
+      exactly the case the map's "no location yet" notice covers.
+    */
+    userId: m.userId ? String(m.userId) : null,
     name,
     initials: initialsOf(name || m.phone),
     avatarColor: colorFor(String(m._id)),
