@@ -4,6 +4,7 @@ import { Server } from 'socket.io'
 import { env } from '../config/env'
 import { socketAuth } from './auth'
 import { registerChatHandlers } from './chat.handlers'
+import { registerMapHandlers } from './map.handlers'
 
 let io: Server | null = null
 
@@ -16,6 +17,7 @@ export function attachSockets(server: HttpServer): Server {
   io.use(socketAuth)
   io.on('connection', (socket) => {
     registerChatHandlers(io!, socket)
+    registerMapHandlers(io!, socket)
   })
 
   return io
