@@ -27,6 +27,14 @@ const membershipSchema = new Schema(
     groupId: { type: Schema.Types.ObjectId, ref: 'Group', default: null },
     role: { type: String, enum: MEMBERSHIP_ROLES, default: 'participant', required: true },
     status: { type: String, enum: MEMBERSHIP_STATUS, default: 'pending', required: true },
+    /*
+      Location sharing, per membership so it is per-camp rather than per-account.
+      Default TRUE: the map is a duty-of-care tool and an opt-in default would make
+      it useless on day one. Turning it OFF hides the pin from everyone including
+      the owner's own group, but the server keeps evaluating out-of-bounds — see
+      locationService.report. Coordinates are discarded, not hidden.
+    */
+    shareLocation: { type: Boolean, default: true },
   },
   { timestamps: true },
 )
