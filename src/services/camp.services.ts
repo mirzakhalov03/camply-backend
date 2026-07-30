@@ -3,6 +3,7 @@ import { CampModel, type Camp } from '../models/camp.model'
 import { MembershipModel, type Membership } from '../models/membership.model'
 import { GroupModel } from '../models/group.model'
 import { GroupPointsModel } from '../models/leaderboard.model'
+import { PlaceModel } from '../models/place.model'
 import { UserModel, type User } from '../models/user.model'
 import { groupService } from './group.services'
 import { rosterService } from './roster.services'
@@ -347,6 +348,7 @@ export const campService = {
     await MembershipModel.deleteMany({ campId })
     await GroupPointsModel.deleteMany({ campId })
     await GroupModel.deleteMany({ campId })
+    await PlaceModel.deleteMany({ campId })
     await CampModel.deleteOne({ _id: campId })
   },
 

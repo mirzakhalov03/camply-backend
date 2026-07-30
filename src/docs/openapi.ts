@@ -29,6 +29,13 @@ import {
   myGroupPhotoSchema,
 } from '../validators/group.validators'
 import {
+  placeIdParams,
+  createPlaceSchema,
+  updatePlaceSchema,
+  boundarySchema,
+  PLACE_ICONS,
+} from '../validators/place.validators'
+import {
   activityIdParams,
   createActivitySchema,
   updateActivitySchema,
@@ -915,6 +922,111 @@ registry.registerPath({
   responses: {
     204: { description: 'Deleted' },
     404: { description: 'Group not found' },
+  },
+})
+
+// ── Camp map: places + boundary ─────────────────────────────────────────
+const CoordsSchema = z.object({ lat: z.number(), lon: z.number() })
+const BoundaryObject = registry.register(
+  'CampBoundary',
+  z.object({ center: CoordsSchema, radiusM: z.number() }),
+)
+const PlaceSchema = registry.register(
+  'Place',
+  z.object({
+    id: z.string(),
+    kind: z.enum(['zone', 'landmark']),
+    name: z.string(),
+    icon: z.enum(PLACE_ICONS),
+    shape: z.literal('circle'),
+    center: CoordsSchema,
+    // Metres. Set for a zone, always null for a landmark.
+    radiusM: z.number().nullable(),
+    order: z.number(),
+  }),
+)
+const MapPlacesSchema = registry.register(
+  'CampMapPlaces',
+  z.object({ boundary: BoundaryObject.nullable(), places: z.array(PlaceSchema) }),
+)
+const CreatePlaceInput = registry.register('CreatePlaceInput', createPlaceSchema)
+const UpdatePlaceInput = registry.register('UpdatePlaceInput', updatePlaceSchema)
+const SetBoundaryInput = registry.register('SetBoundaryInput', boundarySchema)
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/camps/{id}/map/places',
+  tags: ['Camp map'],
+  summary: 'Camp boundary + zones + landmarks (member-level read)',
+  request: { params: campIdParam },
+  responses: {
+    200: {
+      description: 'Static map layer',
+      content: { 'application/json': { schema: MapPlacesSchema } },
+    },
+    403: { description: 'Not a member of this camp' },
+    404: { description: 'Camp not found' },
+  },
+})
+registry.registerPath({
+  method: 'post',
+  path: '/api/organizer/camps/{id}/map/places',
+  tags: ['Camp map'],
+  summary: 'Create a zone or landmark',
+  request: {
+    params: campIdParam,
+    body: { content: { 'application/json': { schema: CreatePlaceInput } } },
+  },
+  responses: {
+    201: { description: 'Created place', content: { 'application/json': { schema: PlaceSchema } } },
+    400: { description: 'A zone needs a radius; a landmark cannot have one' },
+    403: { description: 'Not a manager of this camp' },
+  },
+})
+registry.registerPath({
+  method: 'patch',
+  path: '/api/organizer/camps/{id}/map/places/{pid}',
+  tags: ['Camp map'],
+  summary: 'Rename / move / resize a place (kind is immutable)',
+  request: {
+    params: placeIdParams,
+    body: { content: { 'application/json': { schema: UpdatePlaceInput } } },
+  },
+  responses: {
+    200: { description: 'Updated place', content: { 'application/json': { schema: PlaceSchema } } },
+    400: { description: 'Radius does not match the stored kind' },
+    404: { description: 'Place not found in this camp' },
+  },
+})
+registry.registerPath({
+  method: 'delete',
+  path: '/api/organizer/camps/{id}/map/places/{pid}',
+  tags: ['Camp map'],
+  summary: 'Delete a place',
+  request: { params: placeIdParams },
+  responses: {
+    204: { description: 'Deleted' },
+    404: { description: 'Place not found in this camp' },
+  },
+})
+registry.registerPath({
+  method: 'patch',
+  path: '/api/organizer/camps/{id}/map/boundary',
+  tags: ['Camp map'],
+  summary: 'Set or clear the camp boundary circle',
+  request: {
+    params: campIdParam,
+    body: { content: { 'application/json': { schema: SetBoundaryInput } } },
+  },
+  responses: {
+    200: {
+      description: 'Updated boundary',
+      content: {
+        'application/json': { schema: z.object({ boundary: BoundaryObject.nullable() }) },
+      },
+    },
+    403: { description: 'Not a manager of this camp' },
+    404: { description: 'Camp not found' },
   },
 })
 

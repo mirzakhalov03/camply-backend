@@ -6,8 +6,10 @@ import { campIdParam, createCampSchema, updateCampSchema } from '../validators/c
 import * as c from '../controllers/camp.controllers'
 import { getMyGroup, setMyGroupPhoto } from '../controllers/group.controllers'
 import { myGroupPhotoSchema } from '../validators/group.validators'
+import { getMapPlaces } from '../controllers/place.controllers'
 import rosterRouter from './roster.routes'
 import groupRouter from './group.routes'
+import mapRouter from './place.routes'
 import scheduleRouter from './schedule.routes'
 import announcementRouter from './announcement.routes'
 import leaderboardRouter from './leaderboard.routes'
@@ -18,6 +20,9 @@ export const organizerCampRouter = Router()
 organizerCampRouter.use(requireAuth, requireRole('organizer'))
 organizerCampRouter.use('/camps/:id/roster', rosterRouter)
 organizerCampRouter.use('/camps/:id/groups', groupRouter)
+// Map AUTHORING (zones, landmarks, boundary) — manager-tier. The member-level read
+// lives on campRouter below.
+organizerCampRouter.use('/camps/:id/map', mapRouter)
 organizerCampRouter.get('/camps', c.listCamps)
 organizerCampRouter.get('/summary', c.getCampSummary)
 organizerCampRouter.post(
@@ -98,6 +103,19 @@ campRouter.get(
   validate({ params: campIdParam }),
   requireCampMember,
   c.getMyRole,
+)
+/*
+  The camp's STATIC map layer — boundary + zones + landmarks. Member-level, and
+  deliberately the only read: a place carries no personal data and is camp-wide public,
+  so a manager-only duplicate of this projection would earn nothing. Live participant
+  pins are a separate, privacy-scoped resource (design §5, step 2).
+*/
+campRouter.get(
+  '/:id/map/places',
+  requireAuth,
+  validate({ params: campIdParam }),
+  requireCampMember,
+  getMapPlaces,
 )
 campRouter.use('/:id/schedule', scheduleRouter)
 campRouter.use('/:id/announcements', announcementRouter)
