@@ -7,6 +7,8 @@ import * as c from '../controllers/camp.controllers'
 import { getMyGroup, setMyGroupPhoto } from '../controllers/group.controllers'
 import { myGroupPhotoSchema } from '../validators/group.validators'
 import { getMapPlaces } from '../controllers/place.controllers'
+import { getMapPins, setSharing } from '../controllers/location.controllers'
+import { sharingSchema } from '../validators/location.validators'
 import rosterRouter from './roster.routes'
 import groupRouter from './group.routes'
 import mapRouter from './place.routes'
@@ -116,6 +118,29 @@ campRouter.get(
   validate({ params: campIdParam }),
   requireCampMember,
   getMapPlaces,
+)
+/*
+  Live pins — the PRIVACY-SCOPED read. Member-level, but what comes back depends on who
+  is asking: a participant gets their own group, staff get the whole camp plus the
+  coordinate-free `hidden[]`. The scoping lives in the service, not here.
+*/
+campRouter.get(
+  '/:id/map/pins',
+  requireAuth,
+  validate({ params: campIdParam }),
+  requireCampMember,
+  getMapPins,
+)
+/*
+  The caller's OWN sharing toggle. No user id in the body — the target is always the
+  authenticated caller, so there is no parameter to aim at someone else.
+*/
+campRouter.patch(
+  '/:id/my-location-sharing',
+  requireAuth,
+  validate({ params: campIdParam, body: sharingSchema }),
+  requireCampMember,
+  setSharing,
 )
 campRouter.use('/:id/schedule', scheduleRouter)
 campRouter.use('/:id/announcements', announcementRouter)
