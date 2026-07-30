@@ -17,5 +17,15 @@ export const createActivitySchema = z.object({
   endsAt: z.string().datetime(),
   scope: scopeSchema,
   description: z.string().nullable().optional(),
+  /*
+    Optional link to a camp Place. Nullable AND optional on purpose: absent means
+    "leave it alone" on a PATCH, an explicit null means "unlink". Most activities
+    never carry one.
+  */
+  placeId: z
+    .string()
+    .regex(/^[0-9a-fA-F]{24}$/, 'Invalid id')
+    .nullable()
+    .optional(),
 })
 export const updateActivitySchema = createActivitySchema.partial()

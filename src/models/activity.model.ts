@@ -12,6 +12,14 @@ const activitySchema = new Schema(
     scope: { type: String, enum: ACTIVITY_SCOPE, default: 'camp', required: true },
     groupId: { type: Schema.Types.ObjectId, ref: 'Group', default: null },
     description: { type: String, default: null },
+    /*
+      Optional link to a camp place — what turns the map from a novelty into
+      wayfinding ("Breakfast · Dining hall · 340 m away"). Nullable and always
+      optional: most camps fill this in gradually, and an activity with no place must
+      stay perfectly valid. `location` stays as the free-text label, which is still
+      what an activity outside camp geometry needs.
+    */
+    placeId: { type: Schema.Types.ObjectId, ref: 'Place', default: null },
   },
   { timestamps: true },
 )

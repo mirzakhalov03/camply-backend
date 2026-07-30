@@ -1122,6 +1122,10 @@ const ActivitySchema = registry.register(
     endsAt: z.string(),
     scope: ActivityScopeSchema,
     description: z.string().nullable(),
+    // Optional link to a camp Place; `place` is the resolved projection so a client
+    // can render an icon and deep-link into the map without a second request.
+    placeId: z.string().nullable(),
+    place: z.object({ id: z.string(), name: z.string(), icon: z.string() }).nullable(),
   }),
 )
 const CreateActivityInput = registry.register('CreateActivityInput', createActivitySchema)
